@@ -7,4 +7,4 @@ Read the AGENTS.md of every directory you touch. Full rationale, only if a rule 
 - One function, one job. Names say what it is, with units (`retry_delay_seconds`). Booleans are predicates. No abbreviations except id, url, db.
 - Comments default to zero: only why, Pre/Post contracts, references. No narration, no TODO excuses, no commented-out code.
 - No AI slop: smallest diff that solves the task. No unrequested files, abstractions, fallbacks, docs, summaries or emoji. Agent files stay ≤ 10 lines.
-- Before committing: format, lint, typecheck and tests green. Conventional Commits. Never commit secrets.
+- No tests: do not write or add any. Before committing: format, lint and typecheck pass. Conventional Commits. Never commit secrets.

@@ -2,4 +2,3 @@
 - Ports are typing.Protocol classes defined here; persistence/ and integrations/ implement them.
 - One use case per module with one public async `execute`. Inputs and outputs are domain types.
 - No SQL, HTTP, SQS or framework code. Transactions are expressed through a unit-of-work port.
-- Tested with in-memory fakes of the ports, not mocks.

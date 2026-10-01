@@ -22,14 +22,13 @@ Browser / README embed → CloudFront → S3 (React app)
 | --- | --- | --- |
 | `backend/src/gittoken/domain/` | Entities, attribution, LoC → tokens estimator. Pure Python | Lluc |
 | `backend/src/gittoken/application/` | Use cases and ports | Lluc |
-| `backend/src/gittoken/persistence/` | Supabase repositories | Mark |
-| `backend/src/gittoken/integrations/` | GitHub client, token broker, SQS | Mark |
+| `backend/src/gittoken/persistence/` | Supabase repositories | Marc |
+| `backend/src/gittoken/integrations/` | GitHub client, token broker, SQS | Marc |
 | `backend/src/gittoken/entrypoints/` | `api/`, `worker/`, `cli/` (calibrate) | Lluc |
-| `backend/tests/` | `unit/`, `integration/` | Whoever owns the code under test |
 | `frontend/` | React + Vite + TypeScript | Lluc |
-| `infra/` | AWS CDK (Python): ECS, SQS, S3, CloudFront, alarms | Mark |
-| `supabase/` | Migrations, RLS | Mark |
-| `.github/` | CI/CD with GitHub Actions + AWS OIDC | Mark |
+| `infra/` | AWS CDK (Python): ECS, SQS, S3, CloudFront, alarms | Marc |
+| `supabase/` | Migrations, RLS | Marc |
+| `.github/` | CI/CD with GitHub Actions + AWS OIDC | Marc |
 
 ## Rules
 
@@ -39,11 +38,11 @@ Every directory has an `AGENTS.md` (≤ 10 lines) that humans and coding agents 
 
 **Phase 0: spike (1 week).** Exit: we trust the estimates within 2×.
 - [ ] Lluc: domain model, agent signatures, estimator v0, `calibrate` CLI on our own agent logs
-- [ ] Mark: GitHub App, token broker, crawl 20 known profiles into local Supabase
+- [ ] Marc: GitHub App, token broker, crawl 20 known profiles into local Supabase
 
 **Phase 1: MVP (2–3 weeks).** Exit: any public username scouted in under 60 s.
 - [ ] Lluc: use cases, `/v1` API, SVG card, profile and methodology pages
-- [ ] Mark: schema and migrations, CDK stacks for dev, CI/CD, worker scaling on queue depth
+- [ ] Marc: schema and migrations, CDK stacks for dev, CI/CD, worker scaling on queue depth
 
 **Phase 2: launch (2 weeks).** PNG and link-preview images, leaderboard, tiers, scheduled re-crawls, prod environment.
 

@@ -1,4 +1,4 @@
-# Infra (owner: Mark): AWS CDK in Python. Same Python tooling rules as backend/.
+# Infra (owner: Marc): AWS CDK in Python. Same Python tooling rules as backend/.
 Stacks in stacks/: network, queues (SQS + DLQ), api_service and worker_service (ECS Fargate, same image), web (S3 + CloudFront), observability.
 - Everything as code; no console changes. Put the `cdk diff` output in the PR.
 - One stack per concern. Cross-stack values pass as typed constructor props, not string exports.
