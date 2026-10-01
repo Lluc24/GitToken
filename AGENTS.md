@@ -1,0 +1,10 @@
+# GitToken: estimates the LLM tokens developers spent through coding agents, from their public GitHub commits.
+Read the AGENTS.md of every directory you touch. Full rationale, only if a rule is unclear: docs/CODING_RULES.md.
+- Validate untrusted input once, at the boundary, into typed domain values. Interior code trusts its types: no None/isinstance/hasattr checks, no impossible branches.
+- Make invalid states unrepresentable: frozen dataclasses, enums, branded types. No raw dicts/JSON past the boundary, no Optional after validation.
+- Fail loud: never catch to return None or a default, never swallow or log-and-continue. Errors propagate to the layer that can act.
+- Layers: domain ← application ← persistence, integrations, entrypoints. Dependencies point inward only; the inner layer defines the ports.
+- One function, one job. Names say what it is, with units (`retry_delay_seconds`). Booleans are predicates. No abbreviations except id, url, db.
+- Comments default to zero: only why, Pre/Post contracts, references. No narration, no TODO excuses, no commented-out code.
+- No AI slop: smallest diff that solves the task. No unrequested files, abstractions, fallbacks, docs, summaries or emoji. Agent files stay ≤ 10 lines.
+- Before committing: format, lint, typecheck and tests green. Conventional Commits. Never commit secrets.
