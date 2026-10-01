@@ -2,6 +2,8 @@
 
 [GitFut](https://gitfut.com/) for token maxxers. Enter a GitHub username and get a shareable card showing the LLM tokens that developer spent through coding agents. The number is estimated from agent-attributed lines of code in their public repos.
 
+One monorepo: backend, frontend, infra and Supabase schema ship together, with one CI and one `make check`.
+
 Architecture proposal: [GitToken — Architecture Proposal](https://claude.ai/code/artifact/953dfeaf-4523-4951-aa18-eed07d207661)
 
 ## Architecture
@@ -45,7 +47,7 @@ Copy `.env.example` to `.env` for local secrets.
 
 ## Rules
 
-Every directory has an `AGENTS.md` (≤ 10 lines) that humans and coding agents follow. `CLAUDE.md` imports it. The root one holds the global rules; [docs/CODING_RULES.md](docs/CODING_RULES.md) explains them in full.
+Every directory has an `AGENTS.md` (≤ 10 lines) that humans and coding agents follow. `CLAUDE.md` imports it. The root one holds the global rules, [CONTRIBUTING.md](CONTRIBUTING.md) the PR workflow; [docs/CODING_RULES.md](docs/CODING_RULES.md) explains them in full.
 
 ## Plan
 
