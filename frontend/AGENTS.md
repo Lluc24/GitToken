@@ -4,4 +4,4 @@ Layers in src/: domain ← application ← infrastructure, ui. Root AGENTS.md ru
 - infrastructure/: API client generated from the backend OpenAPI, Supabase Realtime. The only place that does I/O.
 - application/: TanStack Query hooks over infrastructure. Components never call fetch.
 - ui/: components and pages. Typed props; no `any`, no non-null `!`, no `as` casts. Accessible markup.
-- Biome owns lint and format. `pnpm check` passes before commit.
+- Biome owns lint and format; `make check` (biome ci, tsc) passes before commit.

@@ -30,6 +30,19 @@ Browser / README embed → CloudFront → S3 (React app)
 | `supabase/` | Migrations, RLS | Marc |
 | `.github/` | CI/CD with GitHub Actions + AWS OIDC | Marc |
 
+## Getting started
+
+Needs uv, pnpm and make.
+
+```
+make setup     # install everything, enable the pre-commit hook
+make check     # format, lint, typecheck: the same gate CI runs
+make fix       # auto-format and auto-fix
+make dev-web   # frontend dev server
+```
+
+Copy `.env.example` to `.env` for local secrets.
+
 ## Rules
 
 Every directory has an `AGENTS.md` (≤ 10 lines) that humans and coding agents follow. `CLAUDE.md` imports it. The root one holds the global rules; [docs/CODING_RULES.md](docs/CODING_RULES.md) explains them in full.
