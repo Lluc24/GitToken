@@ -6,7 +6,6 @@ from gittoken.domain.estimator import ProfileEstimate
 
 class AgentTokensResponse(BaseModel):
     agent: Agent
-    commit_count: int
     lines_added: int
     tokens: int
 
@@ -23,10 +22,7 @@ def profile_tokens_response(estimate: ProfileEstimate) -> ProfileTokensResponse:
         total_tokens=estimate.total_tokens,
         agents=[
             AgentTokensResponse(
-                agent=agent_estimate.agent,
-                commit_count=agent_estimate.commit_count,
-                lines_added=agent_estimate.lines_added,
-                tokens=agent_estimate.tokens,
+                agent=agent_estimate.agent, lines_added=agent_estimate.lines_added, tokens=agent_estimate.tokens
             )
             for agent_estimate in estimate.agent_estimates
         ],

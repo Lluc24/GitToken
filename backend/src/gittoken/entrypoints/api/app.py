@@ -1,10 +1,9 @@
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
-from pathlib import Path
 
 import httpx
-from fastapi import APIRouter, FastAPI, Request, status
+from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings
@@ -13,7 +12,6 @@ from gittoken.application.estimate_profile_tokens import EstimateProfileTokens
 from gittoken.application.ports import ProfileNotFoundError
 from gittoken.domain.github_login import GithubLogin, InvalidGithubLoginError
 from gittoken.entrypoints.api.schemas import ProfileTokensResponse, profile_tokens_response
-from gittoken.entrypoints.api.signatures_file import load_agent_by_email
 from gittoken.integrations.github_graphql import GithubApiError, GithubGraphqlClient
 
 _GITHUB_TIMEOUT_SECONDS = 30
@@ -23,17 +21,6 @@ _COMMITS_SINCE = datetime(2025, 1, 1, tzinfo=UTC)
 
 class ApiSettings(BaseSettings):
     github_token: SecretStr
-    agent_signatures_file: Path = Path("data/signatures.yaml")
-
-
-def _v1_router(estimate_profile_tokens: EstimateProfileTokens) -> APIRouter:
-    router = APIRouter(prefix="/v1")
-
-    @router.get("/users/{login}")
-    async def get_user_tokens(login: str) -> ProfileTokensResponse:
-        return profile_tokens_response(await estimate_profile_tokens.execute(GithubLogin(login)))
-
-    return router
 
 
 def _error_handler(status_code: int) -> Callable[[Request, Exception], Awaitable[JSONResponse]]:
@@ -48,11 +35,8 @@ def create_app() -> FastAPI:
     http_client = httpx.AsyncClient(timeout=_GITHUB_TIMEOUT_SECONDS)
     estimate_profile_tokens = EstimateProfileTokens(
         github=GithubGraphqlClient(
-            http_client,
-            settings.github_token.get_secret_value(),
-            _MAXIMUM_CONCURRENT_GITHUB_REQUESTS,
+            http_client, settings.github_token.get_secret_value(), _MAXIMUM_CONCURRENT_GITHUB_REQUESTS
         ),
-        agent_by_email=load_agent_by_email(settings.agent_signatures_file),
         commits_since=_COMMITS_SINCE,
     )
 
@@ -62,7 +46,11 @@ def create_app() -> FastAPI:
         await http_client.aclose()
 
     app = FastAPI(title="GitToken", lifespan=close_http_client_on_shutdown)
-    app.include_router(_v1_router(estimate_profile_tokens))
+
+    @app.get("/v1/users/{login}")
+    async def get_user_tokens(login: str) -> ProfileTokensResponse:
+        return profile_tokens_response(await estimate_profile_tokens.execute(GithubLogin(login)))
+
     app.add_exception_handler(InvalidGithubLoginError, _error_handler(status.HTTP_400_BAD_REQUEST))
     app.add_exception_handler(ProfileNotFoundError, _error_handler(status.HTTP_404_NOT_FOUND))
     app.add_exception_handler(GithubApiError, _error_handler(status.HTTP_502_BAD_GATEWAY))

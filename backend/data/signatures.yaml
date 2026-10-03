@@ -1,8 +1,0 @@
-# Emails each agent leaves as the commit author or in a Co-authored-by trailer.
-claude_code: [noreply@anthropic.com]
-codex: [noreply@openai.com, "199175422+chatgpt-codex-connector[bot]@users.noreply.github.com"]
-cursor: [cursoragent@cursor.com, agent@cursor.com]
-copilot: ["198982749+Copilot@users.noreply.github.com", "223556219+Copilot@users.noreply.github.com"]
-devin: ["158243242+devin-ai-integration[bot]@users.noreply.github.com"]
-jules: ["161369871+google-labs-jules[bot]@users.noreply.github.com"]
-aider: [aider@aider.chat, noreply@aider.chat]
