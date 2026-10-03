@@ -1,0 +1,13 @@
+# Ordered by precedence: the first matching signature attributes the commit. Values are lowercase.
+- {agent: copilot, kind: author_email, value: "198982749+copilot@users.noreply.github.com"}
+- {agent: devin, kind: author_login, value: "devin-ai-integration[bot]"}
+- {agent: jules, kind: author_login, value: "google-labs-jules[bot]"}
+- {agent: codex, kind: author_login, value: "chatgpt-codex-connector[bot]"}
+- {agent: cursor, kind: author_email, value: "agent@cursor.com"}
+- {agent: claude_code, kind: coauthor_email, value: "noreply@anthropic.com"}
+- {agent: codex, kind: coauthor_email, value: "noreply@openai.com"}
+- {agent: cursor, kind: coauthor_email, value: "cursoragent@cursor.com"}
+- {agent: copilot, kind: coauthor_email, value: "198982749+copilot@users.noreply.github.com"}
+- {agent: copilot, kind: coauthor_email, value: "223556219+copilot@users.noreply.github.com"}
+- {agent: aider, kind: coauthor_email, value: "aider@aider.chat"}
+- {agent: aider, kind: coauthor_email, value: "noreply@aider.chat"}
