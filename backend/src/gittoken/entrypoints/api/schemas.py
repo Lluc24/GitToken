@@ -17,10 +17,6 @@ class ProfileTokensResponse(BaseModel):
     agents: list[AgentTokensResponse]
 
 
-class ErrorResponse(BaseModel):
-    detail: str
-
-
 def profile_tokens_response(estimate: ProfileEstimate) -> ProfileTokensResponse:
     return ProfileTokensResponse(
         login=estimate.login.value,

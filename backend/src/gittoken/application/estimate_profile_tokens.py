@@ -1,28 +1,20 @@
 import asyncio
-from collections.abc import Sequence
+from collections.abc import Mapping
 from datetime import datetime
+from itertools import chain
 
 from gittoken.application.ports import GithubCommitSource
-from gittoken.domain.attribution import (
-    AgentSignature,
-    Attribution,
-    attribute_commit,
-    is_credited_to_repository_owner,
-)
-from gittoken.domain.commit import Commit
+from gittoken.domain.agent import Agent
 from gittoken.domain.estimator import ProfileEstimate, estimate_profile
 from gittoken.domain.github_login import GithubLogin
 
 
 class EstimateProfileTokens:
     def __init__(
-        self,
-        github: GithubCommitSource,
-        signatures: Sequence[AgentSignature],
-        commits_since: datetime,
+        self, github: GithubCommitSource, agent_by_email: Mapping[str, Agent], commits_since: datetime
     ) -> None:
         self._github = github
-        self._signatures = signatures
+        self._agent_by_email = agent_by_email
         self._commits_since = commits_since
 
     async def execute(self, login: GithubLogin) -> ProfileEstimate:
@@ -34,10 +26,4 @@ class EstimateProfileTokens:
         commits_by_repository = await asyncio.gather(
             *(self._github.list_default_branch_commits(repository, self._commits_since) for repository in repositories)
         )
-        attributed_commits: list[tuple[Commit, Attribution]] = []
-        for commits in commits_by_repository:
-            for commit in commits:
-                attribution = attribute_commit(commit, self._signatures)
-                if attribution is not None and is_credited_to_repository_owner(commit, attribution, login):
-                    attributed_commits.append((commit, attribution))
-        return estimate_profile(login, attributed_commits)
+        return estimate_profile(login, chain.from_iterable(commits_by_repository), self._agent_by_email)

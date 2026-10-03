@@ -1,5 +1,4 @@
 import asyncio
-import re
 from datetime import datetime
 from typing import Any
 
@@ -7,14 +6,12 @@ import httpx
 from pydantic import AwareDatetime, BaseModel, Field
 
 from gittoken.application.ports import ProfileNotFoundError
-from gittoken.domain.commit import Commit, LinesChanged
+from gittoken.domain.commit import Commit
 from gittoken.domain.github_login import GithubLogin
 from gittoken.domain.repository import Repository
 
 _GRAPHQL_URL = "https://api.github.com/graphql"
 _NOT_FOUND_ERROR_TYPE = "NOT_FOUND"
-# GitHub does not link bot commits to a user; the bot login is only present in its noreply email.
-_NOREPLY_EMAIL = re.compile(r"(?:\d+\+)?(.+)@users\.noreply\.github\.com")
 
 _REPOSITORIES_QUERY = """
 query($login: String!, $cursor: String) {
@@ -35,7 +32,7 @@ query($owner: String!, $name: String!, $since: GitTimestamp!, $cursor: String) {
         ... on Commit {
           history(first: 100, since: $since, after: $cursor) {
             pageInfo { hasNextPage endCursor }
-            nodes { oid committedDate additions deletions message author { email user { login } } }
+            nodes { additions message author { email user { login } } }
           }
         }
       }
@@ -97,10 +94,7 @@ class _Author(BaseModel):
 
 
 class _CommitNode(BaseModel):
-    oid: str
-    committed_date: AwareDatetime = Field(alias="committedDate")
     additions: int
-    deletions: int
     message: str
     author: _Author
 
@@ -126,21 +120,12 @@ class _CommitsData(BaseModel):
     repository: _CommitsRepository
 
 
-def _author_login(author: _Author) -> str | None:
-    if author.user is not None:
-        return author.user.login
-    noreply_email = _NOREPLY_EMAIL.fullmatch(author.email)
-    return None if noreply_email is None else noreply_email.group(1)
-
-
 def _commit(node: _CommitNode) -> Commit:
     return Commit(
-        sha=node.oid,
-        committed_at=node.committed_date,
-        author_login=_author_login(node.author),
+        author_login=None if node.author.user is None else node.author.user.login,
         author_email=node.author.email,
         message=node.message,
-        lines=LinesChanged(node.additions, node.deletions),
+        lines_added=node.additions,
     )
 
 

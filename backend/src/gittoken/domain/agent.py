@@ -9,4 +9,3 @@ class Agent(StrEnum):
     DEVIN = "devin"
     JULES = "jules"
     AIDER = "aider"
-    GEMINI_CLI = "gemini_cli"

@@ -1,9 +1,9 @@
-from collections import defaultdict
-from collections.abc import Sequence
+from collections import Counter
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 
 from gittoken.domain.agent import Agent
-from gittoken.domain.attribution import Attribution
+from gittoken.domain.attribution import find_agent
 from gittoken.domain.commit import Commit
 from gittoken.domain.github_login import GithubLogin
 
@@ -16,7 +16,10 @@ class AgentEstimate:
     agent: Agent
     commit_count: int
     lines_added: int
-    tokens: int
+
+    @property
+    def tokens(self) -> int:
+        return self.lines_added * TOKENS_PER_ADDED_LINE
 
 
 @dataclass(frozen=True)
@@ -29,23 +32,22 @@ class ProfileEstimate:
         return sum(agent_estimate.tokens for agent_estimate in self.agent_estimates)
 
 
-def estimate_profile(login: GithubLogin, attributed_commits: Sequence[tuple[Commit, Attribution]]) -> ProfileEstimate:
-    """Post: one estimate per agent with at least one commit, largest first."""
-    commits_by_agent: defaultdict[Agent, list[Commit]] = defaultdict(list)
-    for commit, attribution in attributed_commits:
-        commits_by_agent[attribution.agent].append(commit)
-    agent_estimates = []
-    for agent, commits in commits_by_agent.items():
-        lines_added = sum(commit.lines.added for commit in commits)
-        agent_estimates.append(
-            AgentEstimate(
-                agent=agent,
-                commit_count=len(commits),
-                lines_added=lines_added,
-                tokens=lines_added * TOKENS_PER_ADDED_LINE,
-            )
-        )
+def estimate_profile(
+    owner: GithubLogin, commits: Iterable[Commit], agent_by_email: Mapping[str, Agent]
+) -> ProfileEstimate:
+    """Pre: commits are in repositories owner owns.
+    Post: one estimate per agent with at least one commit, largest first."""
+    commit_count_by_agent: Counter[Agent] = Counter()
+    lines_added_by_agent: Counter[Agent] = Counter()
+    for commit in commits:
+        agent = find_agent(commit, owner, agent_by_email)
+        if agent is not None:
+            commit_count_by_agent[agent] += 1
+            lines_added_by_agent[agent] += commit.lines_added
     return ProfileEstimate(
-        login=login,
-        agent_estimates=tuple(sorted(agent_estimates, key=lambda estimate: estimate.tokens, reverse=True)),
+        login=owner,
+        agent_estimates=tuple(
+            AgentEstimate(agent, commit_count_by_agent[agent], lines_added)
+            for agent, lines_added in lines_added_by_agent.most_common()
+        ),
     )
