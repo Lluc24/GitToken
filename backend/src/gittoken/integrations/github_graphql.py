@@ -1,3 +1,4 @@
+import asyncio
 import re
 from datetime import datetime
 from typing import Any
@@ -146,16 +147,18 @@ def _commit(node: _CommitNode) -> Commit:
 class GithubGraphqlClient:
     """Pre: http_client has explicit timeouts."""
 
-    def __init__(self, http_client: httpx.AsyncClient, token: str) -> None:
+    def __init__(self, http_client: httpx.AsyncClient, token: str, maximum_concurrent_requests: int) -> None:
         self._http_client = http_client
         self._token = token
+        self._request_slots = asyncio.Semaphore(maximum_concurrent_requests)
 
     async def _query(self, query: str, variables: dict[str, str | None]) -> dict[str, Any]:
-        response = await self._http_client.post(
-            _GRAPHQL_URL,
-            json={"query": query, "variables": variables},
-            headers={"Authorization": f"Bearer {self._token}"},
-        )
+        async with self._request_slots:
+            response = await self._http_client.post(
+                _GRAPHQL_URL,
+                json={"query": query, "variables": variables},
+                headers={"Authorization": f"Bearer {self._token}"},
+            )
         response.raise_for_status()
         envelope = _Envelope.model_validate_json(response.content)
         unexpected_errors = [error for error in envelope.errors if error.type != _NOT_FOUND_ERROR_TYPE]

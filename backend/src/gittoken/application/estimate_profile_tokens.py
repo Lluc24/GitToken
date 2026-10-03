@@ -1,3 +1,4 @@
+import asyncio
 from collections.abc import Sequence
 from datetime import datetime
 
@@ -25,11 +26,17 @@ class EstimateProfileTokens:
         self._commits_since = commits_since
 
     async def execute(self, login: GithubLogin) -> ProfileEstimate:
+        repositories = [
+            repository
+            for repository in await self._github.list_owned_public_repositories(login)
+            if repository.pushed_at >= self._commits_since
+        ]
+        commits_by_repository = await asyncio.gather(
+            *(self._github.list_default_branch_commits(repository, self._commits_since) for repository in repositories)
+        )
         attributed_commits: list[tuple[Commit, Attribution]] = []
-        for repository in await self._github.list_owned_public_repositories(login):
-            if repository.pushed_at < self._commits_since:
-                continue
-            for commit in await self._github.list_default_branch_commits(repository, self._commits_since):
+        for commits in commits_by_repository:
+            for commit in commits:
                 attribution = attribute_commit(commit, self._signatures)
                 if attribution is not None and is_credited_to_repository_owner(commit, attribution, login):
                     attributed_commits.append((commit, attribution))
