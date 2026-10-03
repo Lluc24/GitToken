@@ -11,7 +11,7 @@ from gittoken.application.estimate_profile_tokens import EstimateProfileTokens
 from gittoken.application.ports import ProfileNotFoundError
 from gittoken.domain.estimator import ProfileEstimate
 from gittoken.domain.github_login import GithubLogin, InvalidGithubLoginError
-from gittoken.entrypoints.cli.data_files import load_agent_signatures, load_estimator_version
+from gittoken.entrypoints.cli.data_files import load_agent_signatures
 from gittoken.integrations.github_graphql import GithubGraphqlClient
 
 _GITHUB_TIMEOUT_SECONDS = 30
@@ -24,13 +24,12 @@ class EstimateSettings(BaseSettings):
 
     login: CliPositionalArg[str]
     github_token: SecretStr
-    estimator_version_file: Path = Path("data/estimator_v0.yaml")
     agent_signatures_file: Path = Path("data/signatures.yaml")
     commits_since: AwareDatetime = datetime(2025, 1, 1, tzinfo=UTC)
 
 
 def _print_estimate(estimate: ProfileEstimate) -> None:
-    print(f"{estimate.login.value}: {estimate.total_tokens:,} tokens (estimator {estimate.estimator_version})")
+    print(f"{estimate.login.value}: {estimate.total_tokens:,} tokens")
     print(f"{'agent':<14}{'commits':>9}{'lines added':>13}{'tokens':>18}")
     for agent_estimate in estimate.agent_estimates:
         print(
@@ -44,7 +43,6 @@ async def _estimate(settings: EstimateSettings, login: GithubLogin) -> ProfileEs
         use_case = EstimateProfileTokens(
             github=GithubGraphqlClient(http_client, settings.github_token.get_secret_value()),
             signatures=load_agent_signatures(settings.agent_signatures_file),
-            version=load_estimator_version(settings.estimator_version_file),
             commits_since=settings.commits_since,
         )
         return await use_case.execute(login)

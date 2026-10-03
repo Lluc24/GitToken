@@ -9,7 +9,7 @@ from gittoken.domain.attribution import (
     is_credited_to_repository_owner,
 )
 from gittoken.domain.commit import Commit
-from gittoken.domain.estimator import EstimatorVersion, ProfileEstimate, estimate_profile
+from gittoken.domain.estimator import ProfileEstimate, estimate_profile
 from gittoken.domain.github_login import GithubLogin
 
 
@@ -18,12 +18,10 @@ class EstimateProfileTokens:
         self,
         github: GithubCommitSource,
         signatures: Sequence[AgentSignature],
-        version: EstimatorVersion,
         commits_since: datetime,
     ) -> None:
         self._github = github
         self._signatures = signatures
-        self._version = version
         self._commits_since = commits_since
 
     async def execute(self, login: GithubLogin) -> ProfileEstimate:
@@ -35,4 +33,4 @@ class EstimateProfileTokens:
                 attribution = attribute_commit(commit, self._signatures)
                 if attribution is not None and is_credited_to_repository_owner(commit, attribution, login):
                     attributed_commits.append((commit, attribution))
-        return estimate_profile(login, attributed_commits, self._version)
+        return estimate_profile(login, attributed_commits)

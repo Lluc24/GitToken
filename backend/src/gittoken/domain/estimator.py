@@ -7,11 +7,8 @@ from gittoken.domain.attribution import Attribution
 from gittoken.domain.commit import Commit
 from gittoken.domain.github_login import GithubLogin
 
-
-@dataclass(frozen=True)
-class EstimatorVersion:
-    version: str
-    tokens_per_added_line: int
+# v0 guess: ~30 output tokens per added line, ~100 input tokens (mostly cache reads) per output token.
+TOKENS_PER_ADDED_LINE = 3000
 
 
 @dataclass(frozen=True)
@@ -25,7 +22,6 @@ class AgentEstimate:
 @dataclass(frozen=True)
 class ProfileEstimate:
     login: GithubLogin
-    estimator_version: str
     agent_estimates: tuple[AgentEstimate, ...]
 
     @property
@@ -33,9 +29,7 @@ class ProfileEstimate:
         return sum(agent_estimate.tokens for agent_estimate in self.agent_estimates)
 
 
-def estimate_profile(
-    login: GithubLogin, attributed_commits: Sequence[tuple[Commit, Attribution]], version: EstimatorVersion
-) -> ProfileEstimate:
+def estimate_profile(login: GithubLogin, attributed_commits: Sequence[tuple[Commit, Attribution]]) -> ProfileEstimate:
     """Post: one estimate per agent with at least one commit, largest first."""
     commits_by_agent: defaultdict[Agent, list[Commit]] = defaultdict(list)
     for commit, attribution in attributed_commits:
@@ -48,11 +42,10 @@ def estimate_profile(
                 agent=agent,
                 commit_count=len(commits),
                 lines_added=lines_added,
-                tokens=lines_added * version.tokens_per_added_line,
+                tokens=lines_added * TOKENS_PER_ADDED_LINE,
             )
         )
     return ProfileEstimate(
         login=login,
-        estimator_version=version.version,
         agent_estimates=tuple(sorted(agent_estimates, key=lambda estimate: estimate.tokens, reverse=True)),
     )
