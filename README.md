@@ -25,13 +25,13 @@ flowchart LR
 
 ```
 make setup     # install everything, enable the pre-commit hook
-GITHUB_TOKEN=$(gh auth token) uv run uvicorn gittoken.api:create_app --factory
-curl localhost:8000/v1/users/<username>
+GITHUB_TOKEN=$(gh auth token) uv run uvicorn gittoken.api:create_app --factory   # API on :8000
+make dev-web   # page on http://localhost:5173, proxies /v1 to the API
 make check     # format, lint, typecheck: the same gate CI runs
 make fix       # auto-format and auto-fix
 ```
 
-Needs uv and make.
+Needs uv, pnpm and make.
 
 ## Layout
 
@@ -40,7 +40,7 @@ Needs uv and make.
 | `backend/src/gittoken/domain.py` | Agents, agent emails, the lines → tokens formula | Lluc |
 | `backend/src/gittoken/github.py` | GitHub GraphQL queries | Marc |
 | `backend/src/gittoken/api.py` | FastAPI app and the `/v1` routes | Lluc |
-| `frontend/` | React app (not started) | Lluc |
+| `frontend/` | React page that calls the endpoint | Lluc |
 | `infra/`, `supabase/`, `.github/` | AWS, database and CI/CD (not started) | Marc |
 
 ## Rules
@@ -49,7 +49,7 @@ We start in the simplest shape that works and add structure when concrete code n
 
 ## Next, each when it is needed
 
-- **Frontend**: a page that calls the endpoint and shows the card.
+- **Frontend**: style the page and turn the result into a card.
 - **Cache**: store each profile's result so repeat views do not hit GitHub. Big profiles take minutes today.
 - **Better estimate**: calibrate the formula on real agent logs; show a range.
 - **Scale**: several GitHub tokens, then a queue and workers if a profile is too slow to compute in one request.
