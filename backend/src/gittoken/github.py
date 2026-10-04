@@ -5,9 +5,7 @@ from typing import Any
 import httpx
 from pydantic import BaseModel, Field
 
-from gittoken.domain.agentic_commit import AgenticCommit
-from gittoken.domain.attribution import find_agent
-from gittoken.domain.github_profile import GithubProfile, ProfileNotFoundError, VerifiedGithubUsername
+from gittoken.domain import AgenticCommit, GithubProfile, ProfileNotFoundError, VerifiedGithubUsername, find_agent
 
 _GRAPHQL_URL = "https://api.github.com/graphql"
 _TIMEOUT_SECONDS = 30

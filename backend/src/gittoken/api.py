@@ -4,18 +4,23 @@ from typing import Annotated
 import httpx
 from fastapi import FastAPI, Path, Request, status
 from fastapi.responses import JSONResponse
-from pydantic import SecretStr
+from pydantic import BaseModel, SecretStr
 from pydantic_settings import BaseSettings
 
-from gittoken.domain.github_profile import ProfileNotFoundError, VerifiedGithubUsername
-from gittoken.entrypoints.api.schemas import ProfileTokensResponse
-from gittoken.integrations.github_graphql import fetch_github_profile
+from gittoken.domain import Agent, ProfileNotFoundError, VerifiedGithubUsername
+from gittoken.github import fetch_github_profile
 
 _GITHUB_LOGIN_PATTERN = "^[A-Za-z0-9][A-Za-z0-9-]{0,38}$"
 
 
 class ApiSettings(BaseSettings):
     github_token: SecretStr
+
+
+class ProfileTokensResponse(BaseModel):
+    login: str
+    total_tokens: int
+    tokens_by_agent: dict[Agent, int]
 
 
 def _error_handler(status_code: int) -> Callable[[Request, Exception], Awaitable[JSONResponse]]:
