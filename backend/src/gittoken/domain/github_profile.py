@@ -5,6 +5,11 @@ from typing import NewType
 from gittoken.domain.agent import Agent
 from gittoken.domain.agentic_commit import AgenticCommit
 
+
+class ProfileNotFoundError(Exception):
+    pass
+
+
 # A username that passed the format check at the boundary.
 VerifiedGithubUsername = NewType("VerifiedGithubUsername", str)
 
