@@ -1,5 +1,2 @@
-*                                    @Lluc24
-/backend/src/gittoken/github.py      @MarcCG0
-/infra/                              @MarcCG0
-/supabase/                           @MarcCG0
-/.github/                            @MarcCG0
+# Two-person team: every PR auto-requests the other. Area ownership is in README.md.
+* @Lluc24 @MarcCG0

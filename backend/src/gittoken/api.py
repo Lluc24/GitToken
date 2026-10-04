@@ -36,7 +36,9 @@ def create_app() -> FastAPI:
         except httpx.HTTPError as error:
             raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(error)) from error
         return ProfileTokensResponse(
-            login=profile.login, total_tokens=profile.total_tokens, tokens_by_agent=profile.tokens_by_agent
+            login=profile.login,
+            total_tokens=profile.total_tokens,
+            tokens_by_agent=profile.tokens_by_agent,
         )
 
     return app

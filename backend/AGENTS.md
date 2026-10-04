@@ -5,4 +5,4 @@ Imports point inward only: domain.py ← github.py ← api.py. Split a module in
 - github.py (owner: Marc): the only code that talks to GitHub. Parse every response with Pydantic into domain types. API only, never `git clone`. Explicit timeouts.
 - api.py: the FastAPI composition root. Thin handlers, one pydantic-settings object, no os.environ elsewhere. Public routes live under /v1.
 - Domain raises its own exception types; api.py maps them to HTTP status. No bare except.
-- Full type annotations; `mypy --strict` clean. Must pass before commit: `uv run ruff format`, `uv run ruff check`, `uv run mypy src`.
+- Full type annotations; `mypy --strict` clean. `make check` passes before commit; ruff and mypy config live in the root pyproject.toml.

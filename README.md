@@ -24,10 +24,14 @@ flowchart LR
 3. Tokens = lines added by those commits × 3,000 (a first guess).
 
 ```
-cd backend
+make setup     # install everything, enable the pre-commit hook
 GITHUB_TOKEN=$(gh auth token) uv run uvicorn gittoken.api:create_app --factory
 curl localhost:8000/v1/users/<username>
+make check     # format, lint, typecheck: the same gate CI runs
+make fix       # auto-format and auto-fix
 ```
+
+Needs uv and make.
 
 ## Layout
 
@@ -41,7 +45,7 @@ curl localhost:8000/v1/users/<username>
 
 ## Rules
 
-We start in the simplest shape that works and add structure when concrete code needs it. `AGENTS.md` (≤ 10 lines per directory) holds the rules humans and coding agents follow; `CLAUDE.md` imports it. [docs/CODING_RULES.md](docs/CODING_RULES.md) explains the coding rules in full.
+We start in the simplest shape that works and add structure when concrete code needs it. `AGENTS.md` (≤ 10 lines per directory) holds the rules humans and coding agents follow; `CLAUDE.md` imports it. [CONTRIBUTING.md](CONTRIBUTING.md) holds the PR workflow; [docs/CODING_RULES.md](docs/CODING_RULES.md) explains the coding rules in full.
 
 ## Next, each when it is needed
 

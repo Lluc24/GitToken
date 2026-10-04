@@ -1,4 +1,4 @@
-# GitToken: estimates the LLM tokens developers spent through coding agents, from their public GitHub commits.
+# GitToken monorepo (backend, frontend, infra, supabase): estimates the LLM tokens developers spent through coding agents, from their public GitHub commits.
 Read the AGENTS.md of every directory you touch. Full rationale, only if a rule is unclear: docs/CODING_RULES.md.
 - Validate untrusted input once, at the boundary, into typed domain values. Interior code trusts its types: no None/isinstance/hasattr checks, no impossible branches.
 - Make invalid states unrepresentable: frozen dataclasses, enums, branded types. No raw dicts/JSON past the boundary, no Optional after validation.
@@ -7,4 +7,4 @@ Read the AGENTS.md of every directory you touch. Full rationale, only if a rule 
 - One function, one job. Names say what it is, with units (`retry_delay_seconds`). Booleans are predicates. No abbreviations except id, url, db.
 - Comments default to zero: only why, Pre/Post contracts, references. No narration, no TODO excuses, no commented-out code.
 - No AI slop: smallest diff that solves the task. No unrequested files, abstractions, fallbacks, docs, summaries or emoji. Agent files stay ≤ 10 lines.
-- No tests: do not write or add any. Before committing: format, lint and typecheck pass. Conventional Commits. Never commit secrets. PRs: plain English, ≤ 15 lines: a one-line summary, a What section, a Why section, nothing else.
+- No tests: do not write or add any. Before committing: `make check` passes. Never push to main: branch and PR per CONTRIBUTING.md. Never commit secrets. PRs: plain English, ≤ 15 lines: a one-line summary, a What section, a Why section, nothing else.

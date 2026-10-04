@@ -1,11 +1,16 @@
 import asyncio
 from itertools import chain
-from typing import Any
 
 import httpx
 from pydantic import BaseModel, Field
 
-from gittoken.domain import AgenticCommit, GithubProfile, ProfileNotFoundError, VerifiedGithubUsername, find_agent
+from gittoken.domain import (
+    AgenticCommit,
+    GithubProfile,
+    ProfileNotFoundError,
+    VerifiedGithubUsername,
+    find_agent,
+)
 
 _GRAPHQL_URL = "https://api.github.com/graphql"
 _TIMEOUT_SECONDS = 30
@@ -100,13 +105,17 @@ class _CommitsData(BaseModel):
     node: _RepositoryCommits
 
 
-async def _query(http_client: httpx.AsyncClient, query: str, variables: dict[str, str | None]) -> Any:
+async def _query(
+    http_client: httpx.AsyncClient, query: str, variables: dict[str, str | None]
+) -> object:
     response = await http_client.post(_GRAPHQL_URL, json={"query": query, "variables": variables})
     response.raise_for_status()
     return response.json()["data"]
 
 
-async def _fetch_repository_agentic_commits(http_client: httpx.AsyncClient, repository_id: str) -> list[AgenticCommit]:
+async def _fetch_repository_agentic_commits(
+    http_client: httpx.AsyncClient, repository_id: str
+) -> list[AgenticCommit]:
     agentic_commits: list[AgenticCommit] = []
     cursor: str | None = None
     while True:
@@ -132,7 +141,9 @@ async def fetch_github_profile(token: str, login: VerifiedGithubUsername) -> Git
         timeout=httpx.Timeout(_TIMEOUT_SECONDS, pool=None),
         limits=httpx.Limits(max_connections=_MAXIMUM_CONNECTIONS),
     ) as http_client:
-        data = _UserData.model_validate(await _query(http_client, _REPOSITORIES_QUERY, {"login": login}))
+        data = _UserData.model_validate(
+            await _query(http_client, _REPOSITORIES_QUERY, {"login": login})
+        )
         if data.user is None:
             raise ProfileNotFoundError(f"no GitHub user named {login!r}")
         agentic_commits_by_repository = await asyncio.gather(
