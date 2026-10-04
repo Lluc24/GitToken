@@ -41,4 +41,8 @@ def create_app() -> FastAPI:
             tokens_by_agent=profile.tokens_by_agent,
         )
 
+    app.frontend("/", directory="frontend/dist")
     return app
+
+
+app = create_app()
