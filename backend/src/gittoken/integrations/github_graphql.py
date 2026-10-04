@@ -1,14 +1,15 @@
 import asyncio
 from datetime import datetime
+from itertools import chain
 from typing import Any
 
 import httpx
 from pydantic import AwareDatetime, BaseModel, Field
 
 from gittoken.application.ports import ProfileNotFoundError
-from gittoken.domain.commit import Commit
+from gittoken.domain.agentic_commit import AgenticCommit
+from gittoken.domain.attribution import find_agent
 from gittoken.domain.github_login import GithubLogin
-from gittoken.domain.repository import Repository
 
 _GRAPHQL_URL = "https://api.github.com/graphql"
 _NOT_FOUND_ERROR_TYPE = "NOT_FOUND"
@@ -32,7 +33,7 @@ query($owner: String!, $name: String!, $since: GitTimestamp!, $cursor: String) {
         ... on Commit {
           history(first: 100, since: $since, after: $cursor) {
             pageInfo { hasNextPage endCursor }
-            nodes { additions message author { email user { login } } }
+            nodes { additions authors(first: 10) { nodes { email } } }
           }
         }
       }
@@ -84,19 +85,17 @@ class _RepositoriesData(BaseModel):
     user: _User | None
 
 
-class _AuthorUser(BaseModel):
-    login: str
-
-
 class _Author(BaseModel):
     email: str
-    user: _AuthorUser | None
+
+
+class _Authors(BaseModel):
+    nodes: list[_Author]
 
 
 class _CommitNode(BaseModel):
     additions: int
-    message: str
-    author: _Author
+    authors: _Authors
 
 
 class _History(BaseModel):
@@ -120,13 +119,13 @@ class _CommitsData(BaseModel):
     repository: _CommitsRepository
 
 
-def _commit(node: _CommitNode) -> Commit:
-    return Commit(
-        author_login=None if node.author.user is None else node.author.user.login,
-        author_email=node.author.email,
-        message=node.message,
-        lines_added=node.additions,
-    )
+def _agentic_commits(nodes: list[_CommitNode]) -> list[AgenticCommit]:
+    agentic_commits = []
+    for node in nodes:
+        agent = find_agent(author.email for author in node.authors.nodes)
+        if agent is not None:
+            agentic_commits.append(AgenticCommit(agent, node.additions))
+    return agentic_commits
 
 
 class GithubGraphqlClient:
@@ -151,8 +150,8 @@ class GithubGraphqlClient:
             raise GithubApiError(f"GitHub GraphQL query failed: {envelope.errors}")
         return envelope.data
 
-    async def list_owned_public_repositories(self, login: GithubLogin) -> list[Repository]:
-        repositories: list[Repository] = []
+    async def _list_repositories_pushed_since(self, login: GithubLogin, since: datetime) -> list[_RepositoryNode]:
+        repositories: list[_RepositoryNode] = []
         cursor: str | None = None
         while True:
             data = _RepositoriesData.model_validate(
@@ -161,24 +160,22 @@ class GithubGraphqlClient:
             if data.user is None:
                 raise ProfileNotFoundError(f"no GitHub user named {login.value!r}")
             page = data.user.repositories
-            repositories.extend(
-                Repository(owner=node.owner.login, name=node.name, pushed_at=node.pushed_at)
-                for node in page.nodes
-                if node.pushed_at is not None
-            )
+            repositories.extend(node for node in page.nodes if node.pushed_at is not None and node.pushed_at >= since)
             if not page.page_info.has_next_page:
                 return repositories
             cursor = page.page_info.end_cursor
 
-    async def list_default_branch_commits(self, repository: Repository, since: datetime) -> list[Commit]:
-        commits: list[Commit] = []
+    async def _list_repository_agentic_commits(
+        self, repository: _RepositoryNode, since: datetime
+    ) -> list[AgenticCommit]:
+        agentic_commits: list[AgenticCommit] = []
         cursor: str | None = None
         while True:
             data = _CommitsData.model_validate(
                 await self._query(
                     _COMMITS_QUERY,
                     {
-                        "owner": repository.owner,
+                        "owner": repository.owner.login,
                         "name": repository.name,
                         "since": since.isoformat(),
                         "cursor": cursor,
@@ -186,9 +183,16 @@ class GithubGraphqlClient:
                 )
             )
             if data.repository.default_branch_ref is None:
-                return commits
+                return agentic_commits
             history = data.repository.default_branch_ref.target.history
-            commits.extend(_commit(node) for node in history.nodes)
+            agentic_commits.extend(_agentic_commits(history.nodes))
             if not history.page_info.has_next_page:
-                return commits
+                return agentic_commits
             cursor = history.page_info.end_cursor
+
+    async def list_agentic_commits(self, login: GithubLogin, since: datetime) -> list[AgenticCommit]:
+        repositories = await self._list_repositories_pushed_since(login, since)
+        agentic_commits_by_repository = await asyncio.gather(
+            *(self._list_repository_agentic_commits(repository, since) for repository in repositories)
+        )
+        return list(chain.from_iterable(agentic_commits_by_repository))

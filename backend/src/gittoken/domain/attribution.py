@@ -1,10 +1,8 @@
-import re
+from collections.abc import Iterable
 
 from gittoken.domain.agent import Agent
-from gittoken.domain.commit import Commit
-from gittoken.domain.github_login import GithubLogin
 
-# Lowercase emails each agent leaves as the commit author or in a Co-authored-by trailer.
+# Lowercase emails each agent leaves as a commit author or co-author.
 AGENT_BY_EMAIL = {
     "noreply@anthropic.com": Agent.CLAUDE_CODE,
     "noreply@openai.com": Agent.CODEX,
@@ -19,18 +17,10 @@ AGENT_BY_EMAIL = {
     "noreply@aider.chat": Agent.AIDER,
 }
 
-_COAUTHOR_EMAIL = re.compile(r"^co-authored-by:.*<([^<>\s]+)>\s*$", re.IGNORECASE | re.MULTILINE)
 
-
-def find_agent(commit: Commit, owner: GithubLogin) -> Agent | None:
-    """Pre: commit is in a repository owner owns.
-    Post: the agent that authored the commit, or co-authored a commit owner authored; None otherwise."""
-    authoring_agent = AGENT_BY_EMAIL.get(commit.author_email.lower())
-    if authoring_agent is not None:
-        return authoring_agent
-    if commit.author_login is None or commit.author_login.lower() != owner.value.lower():
-        return None
-    for coauthor_email in _COAUTHOR_EMAIL.findall(commit.message):
-        if coauthor_email.lower() in AGENT_BY_EMAIL:
-            return AGENT_BY_EMAIL[coauthor_email.lower()]
+def find_agent(author_emails: Iterable[str]) -> Agent | None:
+    """Post: the first agent among a commit's authors and co-authors, or None for a commit with no agent."""
+    for author_email in author_emails:
+        if author_email.lower() in AGENT_BY_EMAIL:
+            return AGENT_BY_EMAIL[author_email.lower()]
     return None
