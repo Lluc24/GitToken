@@ -21,3 +21,4 @@ ignore = ["E501", "TRY003"]
 python_version = "3.13"
 strict = true
 warn_unreachable = true
+plugins = ["pydantic.mypy"]

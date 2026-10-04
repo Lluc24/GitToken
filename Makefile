@@ -1,8 +1,7 @@
-.PHONY: setup check fix dev-web repo-bootstrap
+.PHONY: setup check fix repo-bootstrap
 
 setup:
 	uv sync --all-packages
-	pnpm --dir frontend install
 	git config core.hooksPath .githooks
 
 check:
@@ -10,15 +9,10 @@ check:
 	uv run ruff check
 	uv run mypy backend/src
 	uv run mypy infra
-	pnpm --dir frontend check
 
 fix:
 	uv run ruff format
 	uv run ruff check --fix
-	pnpm --dir frontend fix
-
-dev-web:
-	pnpm --dir frontend dev
 
 # One-time, by a repo admin with gh authenticated: squash-only merges, auto-delete branches, main ruleset.
 repo-bootstrap:

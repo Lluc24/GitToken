@@ -1,8 +1,8 @@
-# Backend: Python 3.13, uv, FastAPI. One package `gittoken`, one Docker image, run as the api and worker ECS services.
-Layers in src/gittoken/: domain ← application ← persistence, integrations, entrypoints. Never import outward.
-- Full type annotations; `mypy --strict` clean. Domain uses frozen dataclasses and enums; Pydantic only at boundaries.
-- `make check` (ruff format, ruff check, mypy --strict) passes before commit; ruff and mypy config live in the root pyproject.toml.
-- Domain and application raise their own exception types; entrypoints map them to HTTP status or exit codes. No bare except.
-- Config: one pydantic-settings object built in the entrypoint and passed down. No os.environ anywhere else.
-- No globals or singletons. Dependencies are wired in entrypoints (composition root) and injected.
-- Domain is pure and sync. Application, persistence and integrations are async.
+# Backend: Python 3.13, uv, FastAPI. One package `gittoken`, three modules in src/gittoken/.
+Imports point inward only: domain.py ← github.py ← api.py. Split a module into a folder, or add a layer, only when concrete code needs it.
+- domain.py: agents, the agent email table, AgenticCommit, GithubProfile. Pure and sync: no I/O, no framework imports.
+- The v0 formula and the email table are hardcoded constants in domain.py; versioning and loading them as data come later.
+- github.py (owner: Marc): the only code that talks to GitHub. Parse every response with Pydantic into domain types. API only, never `git clone`. Explicit timeouts.
+- api.py: the FastAPI composition root. Thin handlers, one pydantic-settings object, no os.environ elsewhere. Public routes live under /v1.
+- Domain raises its own exception types; api.py maps them to HTTP status. No bare except.
+- Full type annotations; `mypy --strict` clean. `make check` passes before commit; ruff and mypy config live in the root pyproject.toml.

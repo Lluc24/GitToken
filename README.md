@@ -1,64 +1,58 @@
 # GitToken
 
-[GitFut](https://gitfut.com/) for token maxxers. Enter a GitHub username and get a shareable card showing the LLM tokens that developer spent through coding agents. The number is estimated from agent-attributed lines of code in their public repos.
+![Python 3.13](https://img.shields.io/badge/python-3.13-blue)
+![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
+![Status: early prototype](https://img.shields.io/badge/status-early%20prototype-orange)
 
-One monorepo: backend, frontend, infra and Supabase schema ship together, with one CI and one `make check`.
+[GitFut](https://gitfut.com/) for token maxxers. Enter a GitHub username and get the LLM tokens that developer spent through coding agents, estimated from the agent commits in their public repos.
 
-Architecture proposal: [GitToken — Architecture Proposal](https://claude.ai/code/artifact/953dfeaf-4523-4951-aa18-eed07d207661)
+## How it works today
 
-## Architecture
+One FastAPI service with one endpoint. Nothing is stored.
+
+```mermaid
+flowchart LR
+    Browser -->|"GET /v1/users/{login}"| api[api.py]
+    api --> github[github.py]
+    github -->|GraphQL| GitHub[(GitHub API)]
+    github -->|agentic commits| domain[domain.py]
+    domain -->|tokens per agent| api
+```
+
+1. Read the user's public, non-fork repos pushed to since 2025.
+2. Keep the main-branch commits that have a coding agent among their authors or co-authors.
+3. Tokens = lines added by those commits × 3,000 (a first guess).
 
 ```
-Browser / README embed → CloudFront → S3 (React app)
-                                    → api (FastAPI, ECS Fargate) → Supabase Postgres
-                                                                 → SQS → worker (ECS Fargate) → GitHub API
+make setup     # install everything, enable the pre-commit hook
+GITHUB_TOKEN=$(gh auth token) uv run uvicorn gittoken.api:create_app --factory
+curl localhost:8000/v1/users/<username>
+make check     # format, lint, typecheck: the same gate CI runs
+make fix       # auto-format and auto-fix
 ```
 
-- **api**: serves cached stats, SVG/PNG cards and the per-profile HTML shell with link-preview tags. Enqueues scouts.
-- **worker**: crawls GitHub through the token broker, attributes commits to agents, runs the estimator.
-- **Supabase**: Postgres (raw commits and derived stats), Realtime (scout progress), Auth (GitHub OAuth for opt-out).
+Needs uv and make.
 
 ## Layout
 
 | Path | What | Owner |
 | --- | --- | --- |
-| `backend/src/gittoken/domain/` | Entities, attribution, LoC → tokens estimator. Pure Python | Lluc |
-| `backend/src/gittoken/application/` | Use cases and ports | Lluc |
-| `backend/src/gittoken/persistence/` | Supabase repositories | Marc |
-| `backend/src/gittoken/integrations/` | GitHub client, token broker, SQS | Marc |
-| `backend/src/gittoken/entrypoints/` | `api/`, `worker/`, `cli/` (calibrate) | Lluc |
-| `frontend/` | React + Vite + TypeScript | Lluc |
-| `infra/` | AWS CDK (Python): ECS, SQS, S3, CloudFront, alarms | Marc |
-| `supabase/` | Migrations, RLS | Marc |
-| `.github/` | CI/CD with GitHub Actions + AWS OIDC | Marc |
-
-## Getting started
-
-Needs uv, pnpm and make.
-
-```
-make setup     # install everything, enable the pre-commit hook
-make check     # format, lint, typecheck: the same gate CI runs
-make fix       # auto-format and auto-fix
-make dev-web   # frontend dev server
-```
-
-Copy `.env.example` to `.env` for local secrets.
+| `backend/src/gittoken/domain.py` | Agents, agent emails, the lines → tokens formula | Lluc |
+| `backend/src/gittoken/github.py` | GitHub GraphQL queries | Marc |
+| `backend/src/gittoken/api.py` | FastAPI app and the `/v1` routes | Lluc |
+| `frontend/` | React app (not started) | Lluc |
+| `infra/`, `supabase/`, `.github/` | AWS, database and CI/CD (not started) | Marc |
 
 ## Rules
 
-Every directory has an `AGENTS.md` (≤ 10 lines) that humans and coding agents follow. `CLAUDE.md` imports it. The root one holds the global rules, [CONTRIBUTING.md](CONTRIBUTING.md) the PR workflow; [docs/CODING_RULES.md](docs/CODING_RULES.md) explains them in full.
+We start in the simplest shape that works and add structure when concrete code needs it. `AGENTS.md` (≤ 10 lines per directory) holds the rules humans and coding agents follow; `CLAUDE.md` imports it. [CONTRIBUTING.md](CONTRIBUTING.md) holds the PR workflow; [docs/CODING_RULES.md](docs/CODING_RULES.md) explains the coding rules in full.
 
-## Plan
+## Next, each when it is needed
 
-**Phase 0: spike (1 week).** Exit: we trust the estimates within 2×.
-- [ ] Lluc: domain model, agent signatures, estimator v0, `calibrate` CLI on our own agent logs
-- [ ] Marc: GitHub App, token broker, crawl 20 known profiles into local Supabase
+- **Frontend**: a page that calls the endpoint and shows the card.
+- **Cache**: store each profile's result so repeat views do not hit GitHub. Big profiles take minutes today.
+- **Better estimate**: calibrate the formula on real agent logs; show a range.
+- **Scale**: several GitHub tokens, then a queue and workers if a profile is too slow to compute in one request.
+- **Launch**: embeddable SVG/PNG card, leaderboard, deployment.
 
-**Phase 1: MVP (2–3 weeks).** Exit: any public username scouted in under 60 s.
-- [ ] Lluc: use cases, `/v1` API, SVG card, profile and methodology pages
-- [ ] Marc: schema and migrations, CDK stacks for dev, CI/CD, worker scaling on queue depth
-
-**Phase 2: launch (2 weeks).** PNG and link-preview images, leaderboard, tiers, scheduled re-crawls, prod environment.
-
-**Phase 3: Verified.** Opt-in upload of real usage from the `calibrate` CLI, estimator v2.
+The long-term design is in the [architecture proposal](https://claude.ai/code/artifact/953dfeaf-4523-4951-aa18-eed07d207661).

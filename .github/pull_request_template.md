@@ -1,3 +1,3 @@
-## What and why
+## What
 
-## How to verify
+## Why
