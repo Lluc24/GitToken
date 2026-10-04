@@ -27,4 +27,4 @@ plugins = ["pydantic.mypy"]
 entrypoint = "backend.src.gittoken.api:app"
 
 [tool.vercel.scripts]
-build = "cd frontend && pnpm install --frozen-lockfile && pnpm build"
+build = "cd frontend && corepack pnpm install --frozen-lockfile && corepack pnpm build"
