@@ -1,22 +1,23 @@
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
+from typing import Annotated
 
 import httpx
-from fastapi import FastAPI, Request, status
+from fastapi import FastAPI, Path, Request, status
 from fastapi.responses import JSONResponse
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings
 
 from gittoken.application.estimate_profile_tokens import EstimateProfileTokens
 from gittoken.application.ports import ProfileNotFoundError
-from gittoken.domain.github_login import GithubLogin, InvalidGithubLoginError
-from gittoken.entrypoints.api.schemas import ProfileTokensResponse, profile_tokens_response
+from gittoken.entrypoints.api.schemas import ProfileTokensResponse
 from gittoken.integrations.github_graphql import GithubApiError, GithubGraphqlClient
 
 _GITHUB_TIMEOUT_SECONDS = 30
 _MAXIMUM_CONCURRENT_GITHUB_REQUESTS = 8
 _COMMITS_SINCE = datetime(2025, 1, 1, tzinfo=UTC)
+_GITHUB_LOGIN_PATTERN = "^[A-Za-z0-9][A-Za-z0-9-]{0,38}$"
 
 
 class ApiSettings(BaseSettings):
@@ -48,10 +49,12 @@ def create_app() -> FastAPI:
     app = FastAPI(title="GitToken", lifespan=close_http_client_on_shutdown)
 
     @app.get("/v1/users/{login}")
-    async def get_user_tokens(login: str) -> ProfileTokensResponse:
-        return profile_tokens_response(await estimate_profile_tokens.execute(GithubLogin(login)))
+    async def get_user_tokens(login: Annotated[str, Path(pattern=_GITHUB_LOGIN_PATTERN)]) -> ProfileTokensResponse:
+        profile = await estimate_profile_tokens.execute(login)
+        return ProfileTokensResponse(
+            login=profile.login, total_tokens=profile.total_tokens, tokens_by_agent=profile.tokens_by_agent
+        )
 
-    app.add_exception_handler(InvalidGithubLoginError, _error_handler(status.HTTP_400_BAD_REQUEST))
     app.add_exception_handler(ProfileNotFoundError, _error_handler(status.HTTP_404_NOT_FOUND))
     app.add_exception_handler(GithubApiError, _error_handler(status.HTTP_502_BAD_GATEWAY))
     app.add_exception_handler(httpx.HTTPError, _error_handler(status.HTTP_502_BAD_GATEWAY))

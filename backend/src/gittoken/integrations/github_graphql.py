@@ -9,7 +9,6 @@ from pydantic import AwareDatetime, BaseModel, Field
 from gittoken.application.ports import ProfileNotFoundError
 from gittoken.domain.agentic_commit import AgenticCommit
 from gittoken.domain.attribution import find_agent
-from gittoken.domain.github_login import GithubLogin
 
 _GRAPHQL_URL = "https://api.github.com/graphql"
 _NOT_FOUND_ERROR_TYPE = "NOT_FOUND"
@@ -150,15 +149,15 @@ class GithubGraphqlClient:
             raise GithubApiError(f"GitHub GraphQL query failed: {envelope.errors}")
         return envelope.data
 
-    async def _list_repositories_pushed_since(self, login: GithubLogin, since: datetime) -> list[_RepositoryNode]:
+    async def _list_repositories_pushed_since(self, login: str, since: datetime) -> list[_RepositoryNode]:
         repositories: list[_RepositoryNode] = []
         cursor: str | None = None
         while True:
             data = _RepositoriesData.model_validate(
-                await self._query(_REPOSITORIES_QUERY, {"login": login.value, "cursor": cursor})
+                await self._query(_REPOSITORIES_QUERY, {"login": login, "cursor": cursor})
             )
             if data.user is None:
-                raise ProfileNotFoundError(f"no GitHub user named {login.value!r}")
+                raise ProfileNotFoundError(f"no GitHub user named {login!r}")
             page = data.user.repositories
             repositories.extend(node for node in page.nodes if node.pushed_at is not None and node.pushed_at >= since)
             if not page.page_info.has_next_page:
@@ -190,7 +189,7 @@ class GithubGraphqlClient:
                 return agentic_commits
             cursor = history.page_info.end_cursor
 
-    async def list_agentic_commits(self, login: GithubLogin, since: datetime) -> list[AgenticCommit]:
+    async def list_agentic_commits(self, login: str, since: datetime) -> list[AgenticCommit]:
         repositories = await self._list_repositories_pushed_since(login, since)
         agentic_commits_by_repository = await asyncio.gather(
             *(self._list_repository_agentic_commits(repository, since) for repository in repositories)
