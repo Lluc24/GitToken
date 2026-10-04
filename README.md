@@ -25,13 +25,15 @@ flowchart LR
 
 ```
 make setup     # install everything, enable the pre-commit hook
-GITHUB_TOKEN=$(gh auth token) uv run uvicorn gittoken.api:create_app --factory   # API on :8000
+FASTAPI_ENV=development GITHUB_TOKEN=$(gh auth token) uv run uvicorn gittoken.api:app   # API on :8000
 make dev-web   # page on http://localhost:5173, proxies /v1 to the API
 make check     # format, lint, typecheck: the same gate CI runs
 make fix       # auto-format and auto-fix
 ```
 
 Needs uv, pnpm and make.
+
+Deployed on Vercel as one project: the FastAPI app also serves the built page. `vercel deploy --prod` from the repo root; the Vercel settings are under `[tool.vercel]` in `pyproject.toml`.
 
 ## Layout
 

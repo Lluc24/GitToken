@@ -8,3 +8,5 @@ cdk.out/
 .env*
 !.env.example
 .DS_Store
+.vercel
+_uv/

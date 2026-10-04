@@ -22,3 +22,9 @@ python_version = "3.13"
 strict = true
 warn_unreachable = true
 plugins = ["pydantic.mypy"]
+
+[tool.vercel]
+entrypoint = "backend.src.gittoken.api:app"
+
+[tool.vercel.scripts]
+build = "cd frontend && pnpm install --frozen-lockfile && pnpm build"
