@@ -11,6 +11,7 @@ from pydantic_settings import BaseSettings
 
 from gittoken.application.estimate_profile_tokens import EstimateProfileTokens
 from gittoken.application.ports import ProfileNotFoundError
+from gittoken.domain.github_profile import VerifiedGithubUsername
 from gittoken.entrypoints.api.schemas import ProfileTokensResponse
 from gittoken.integrations.github_graphql import GithubApiError, GithubGraphqlClient
 
@@ -49,7 +50,9 @@ def create_app() -> FastAPI:
     app = FastAPI(title="GitToken", lifespan=close_http_client_on_shutdown)
 
     @app.get("/v1/users/{login}")
-    async def get_user_tokens(login: Annotated[str, Path(pattern=_GITHUB_LOGIN_PATTERN)]) -> ProfileTokensResponse:
+    async def get_user_tokens(
+        login: Annotated[VerifiedGithubUsername, Path(pattern=_GITHUB_LOGIN_PATTERN)],
+    ) -> ProfileTokensResponse:
         profile = await estimate_profile_tokens.execute(login)
         return ProfileTokensResponse(
             login=profile.login, total_tokens=profile.total_tokens, tokens_by_agent=profile.tokens_by_agent

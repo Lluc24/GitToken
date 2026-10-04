@@ -1,13 +1,17 @@
 from collections import Counter
 from dataclasses import dataclass
+from typing import NewType
 
 from gittoken.domain.agent import Agent
 from gittoken.domain.agentic_commit import AgenticCommit
 
+# A username that passed the format check at the boundary.
+VerifiedGithubUsername = NewType("VerifiedGithubUsername", str)
+
 
 @dataclass(frozen=True)
 class GithubProfile:
-    login: str
+    login: VerifiedGithubUsername
     agentic_commits: tuple[AgenticCommit, ...]
 
     @property

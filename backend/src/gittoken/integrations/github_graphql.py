@@ -9,6 +9,7 @@ from pydantic import AwareDatetime, BaseModel, Field
 from gittoken.application.ports import ProfileNotFoundError
 from gittoken.domain.agentic_commit import AgenticCommit
 from gittoken.domain.attribution import find_agent
+from gittoken.domain.github_profile import VerifiedGithubUsername
 
 _GRAPHQL_URL = "https://api.github.com/graphql"
 _NOT_FOUND_ERROR_TYPE = "NOT_FOUND"
@@ -62,7 +63,7 @@ class _PageInfo(BaseModel):
 
 
 class _Owner(BaseModel):
-    login: str
+    login: VerifiedGithubUsername
 
 
 class _RepositoryNode(BaseModel):
@@ -149,7 +150,9 @@ class GithubGraphqlClient:
             raise GithubApiError(f"GitHub GraphQL query failed: {envelope.errors}")
         return envelope.data
 
-    async def _list_repositories_pushed_since(self, login: str, since: datetime) -> list[_RepositoryNode]:
+    async def _list_repositories_pushed_since(
+        self, login: VerifiedGithubUsername, since: datetime
+    ) -> list[_RepositoryNode]:
         repositories: list[_RepositoryNode] = []
         cursor: str | None = None
         while True:
@@ -189,7 +192,7 @@ class GithubGraphqlClient:
                 return agentic_commits
             cursor = history.page_info.end_cursor
 
-    async def list_agentic_commits(self, login: str, since: datetime) -> list[AgenticCommit]:
+    async def list_agentic_commits(self, login: VerifiedGithubUsername, since: datetime) -> list[AgenticCommit]:
         repositories = await self._list_repositories_pushed_since(login, since)
         agentic_commits_by_repository = await asyncio.gather(
             *(self._list_repository_agentic_commits(repository, since) for repository in repositories)

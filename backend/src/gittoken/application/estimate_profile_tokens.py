@@ -1,7 +1,7 @@
 from datetime import datetime
 
 from gittoken.application.ports import AgenticCommitSource
-from gittoken.domain.github_profile import GithubProfile
+from gittoken.domain.github_profile import GithubProfile, VerifiedGithubUsername
 
 
 class EstimateProfileTokens:
@@ -9,5 +9,5 @@ class EstimateProfileTokens:
         self._github = github
         self._commits_since = commits_since
 
-    async def execute(self, login: str) -> GithubProfile:
+    async def execute(self, login: VerifiedGithubUsername) -> GithubProfile:
         return GithubProfile(login, tuple(await self._github.list_agentic_commits(login, self._commits_since)))
