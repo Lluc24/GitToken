@@ -24,6 +24,7 @@ class ApiSettings(BaseSettings):
 class ProfileTokensResponse(BaseModel):
     login: str
     total_tokens: int
+    rarity: Rarity
     tokens_by_agent: dict[Agent, int]
 
 
@@ -49,6 +50,7 @@ def create_app() -> FastAPI:
         return ProfileTokensResponse(
             login=profile.login,
             total_tokens=profile.total_tokens,
+            rarity=profile.rarity,
             tokens_by_agent=profile.tokens_by_agent,
         )
 

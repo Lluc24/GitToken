@@ -8,6 +8,10 @@
   --color-card-gold-dark: #9c7a26;
   --color-card-common: #e4e9ef;
   --color-card-common-dark: #8a96a3;
+  --color-card-rare: #ffb15e;
+  --color-card-rare-dark: #b35a1f;
+  --color-card-epic: #d68cff;
+  --color-card-epic-dark: #6d2fb0;
   --color-scout-green: #5ec95a;
   --color-muted: #9aa3c9;
 }
