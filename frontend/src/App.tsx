@@ -40,17 +40,28 @@ export function App() {
   }
 
   return (
-    <main>
-      <h1>GitToken</h1>
-      <form onSubmit={submitLogin}>
-        <label>
-          GitHub username{" "}
+    <main className="mx-auto flex max-w-xl flex-col items-center gap-8 px-4 py-12">
+      <h1 className="font-bold font-display text-6xl uppercase tracking-tight">
+        GitToken
+      </h1>
+      <form
+        onSubmit={submitLogin}
+        className="flex w-full flex-col gap-3 sm:flex-row sm:items-end"
+      >
+        <label className="flex flex-1 flex-col gap-1 font-display text-muted text-sm uppercase tracking-[0.2em]">
+          GitHub username
           <input
             value={typedLogin}
             onChange={(event) => setTypedLogin(event.target.value)}
+            className="rounded-2xl border border-white/15 bg-pitch-night/60 px-4 py-3 font-mono text-base text-white tracking-normal outline-none focus:border-card-gold"
           />
-        </label>{" "}
-        <button type="submit">Estimate tokens</button>
+        </label>
+        <button
+          type="submit"
+          className="rounded-2xl bg-scout-green px-6 py-3 font-bold font-display text-lg text-pitch-night uppercase tracking-wider hover:brightness-110"
+        >
+          Estimate tokens
+        </button>
       </form>
       {submittedLogin !== "" && <ProfileTokensResult login={submittedLogin} />}
     </main>
