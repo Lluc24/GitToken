@@ -1,9 +1,23 @@
 import { useQuery } from "@tanstack/react-query";
 import { z } from "zod";
 
-const rarity = z.enum(["common", "rare", "epic", "legendary", "champion"]);
+const rarityByLevel = {
+  1: "common",
+  2: "rare",
+  3: "epic",
+  4: "legendary",
+  5: "champion",
+} as const;
 
-export type Rarity = z.infer<typeof rarity>;
+export type Rarity = (typeof rarityByLevel)[keyof typeof rarityByLevel];
+
+const rarityLevel = z.union([
+  z.literal(1),
+  z.literal(2),
+  z.literal(3),
+  z.literal(4),
+  z.literal(5),
+]);
 
 const profileTokensResponse = z.object({
   login: z.string(),
@@ -50,7 +64,7 @@ async function fetchRarity(tokens: number): Promise<Rarity> {
   if (!response.ok) {
     throw new Error(`The GitToken API answered ${response.status}`);
   }
-  return rarity.parse(await response.json());
+  return rarityByLevel[rarityLevel.parse(await response.json())];
 }
 
 /** Pre: tokens >= 0. */
