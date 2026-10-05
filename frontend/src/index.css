@@ -1,0 +1,19 @@
+@import "tailwindcss";
+
+@theme {
+  --font-display: "Lilita One", system-ui, sans-serif;
+  --color-arena-night: #0b1a3a;
+  --color-arena-blue: #1d4ea8;
+  --color-crown-gold: #f5c33b;
+  --color-crown-gold-dark: #a8740f;
+  --color-elixir: #d63fd6;
+}
+
+body {
+  background: radial-gradient(
+      ellipse at top,
+      var(--color-arena-blue),
+      var(--color-arena-night) 70%
+    )
+    fixed;
+}
