@@ -1,6 +1,7 @@
 import { type FormEvent, useState } from "react";
 import { useProfileTokens } from "./api";
 import { formatTokens } from "./format";
+import { TokenCard } from "./TokenCard";
 
 function ProfileTokensResult({ login }: { login: string }) {
   const profileTokens = useProfileTokens(login);
@@ -12,11 +13,11 @@ function ProfileTokensResult({ login }: { login: string }) {
     return <p role="alert">{profileTokens.error.message}</p>;
   }
   return (
-    <section>
-      <h2>
-        {profileTokens.data.login}:{" "}
-        {formatTokens(profileTokens.data.totalTokens)} tokens
-      </h2>
+    <section className="flex flex-col items-center gap-6">
+      <TokenCard
+        login={profileTokens.data.login}
+        totalTokens={profileTokens.data.totalTokens}
+      />
       <ul>
         {Object.entries(profileTokens.data.tokensByAgent).map(
           ([agent, tokens]) => (
