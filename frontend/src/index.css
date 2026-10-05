@@ -1,19 +1,20 @@
 @import "tailwindcss";
 
 @theme {
-  --font-display: "Lilita One", system-ui, sans-serif;
-  --color-arena-night: #0b1a3a;
-  --color-arena-blue: #1d4ea8;
-  --color-crown-gold: #f5c33b;
-  --color-crown-gold-dark: #a8740f;
-  --color-elixir: #d63fd6;
+  --font-display: "Oswald", system-ui, sans-serif;
+  --color-pitch-night: #070b24;
+  --color-pitch-blue: #1b2a6b;
+  --color-card-gold: #e6c65c;
+  --color-card-gold-dark: #9c7a26;
+  --color-scout-green: #5ec95a;
+  --color-muted: #9aa3c9;
 }
 
 body {
   background: radial-gradient(
       ellipse at top,
-      var(--color-arena-blue),
-      var(--color-arena-night) 70%
+      var(--color-pitch-blue),
+      var(--color-pitch-night) 70%
     )
     fixed;
 }
