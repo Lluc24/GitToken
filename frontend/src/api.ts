@@ -1,33 +1,21 @@
 import { useQuery } from "@tanstack/react-query";
 import { z } from "zod";
 
-const rarityByLevel = {
-  1: "common",
-  2: "rare",
-  3: "epic",
-  4: "legendary",
-  5: "champion",
-} as const;
+const rarity = z.enum(["common", "rare", "epic", "legendary", "champion"]);
 
-export type Rarity = (typeof rarityByLevel)[keyof typeof rarityByLevel];
-
-const rarityLevel = z.union([
-  z.literal(1),
-  z.literal(2),
-  z.literal(3),
-  z.literal(4),
-  z.literal(5),
-]);
+export type Rarity = z.infer<typeof rarity>;
 
 const profileTokensResponse = z.object({
   login: z.string(),
   total_tokens: z.number(),
+  rarity,
   tokens_by_agent: z.record(z.string(), z.number()),
 });
 
 export type ProfileTokens = {
   login: string;
   totalTokens: number;
+  rarity: Rarity;
   tokensByAgent: Record<string, number>;
 };
 
@@ -46,6 +34,7 @@ async function fetchProfileTokens(login: string): Promise<ProfileTokens> {
   return {
     login: body.login,
     totalTokens: body.total_tokens,
+    rarity: body.rarity,
     tokensByAgent: body.tokens_by_agent,
   };
 }
@@ -55,23 +44,6 @@ export function useProfileTokens(login: string) {
   return useQuery({
     queryKey: ["profile-tokens", login],
     queryFn: () => fetchProfileTokens(login),
-    retry: false,
-  });
-}
-
-async function fetchRarity(tokens: number): Promise<Rarity> {
-  const response = await fetch(`/v1/rarity?tokens=${tokens}`);
-  if (!response.ok) {
-    throw new Error(`The GitToken API answered ${response.status}`);
-  }
-  return rarityByLevel[rarityLevel.parse(await response.json())];
-}
-
-/** Pre: tokens >= 0. */
-export function useRarity(tokens: number) {
-  return useQuery({
-    queryKey: ["rarity", tokens],
-    queryFn: () => fetchRarity(tokens),
     retry: false,
   });
 }

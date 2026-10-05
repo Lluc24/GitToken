@@ -1,29 +1,7 @@
 import { type FormEvent, useState } from "react";
-import { type ProfileTokens, useProfileTokens, useRarity } from "./api";
+import { useProfileTokens } from "./api";
 import { formatTokens } from "./format";
 import { TokenCard } from "./TokenCard";
-
-function ProfileTokensCard({
-  profileTokens,
-}: {
-  profileTokens: ProfileTokens;
-}) {
-  const rarity = useRarity(profileTokens.totalTokens);
-
-  if (rarity.isPending) {
-    return <p>Picking {profileTokens.login}'s card…</p>;
-  }
-  if (rarity.isError) {
-    return <p role="alert">{rarity.error.message}</p>;
-  }
-  return (
-    <TokenCard
-      login={profileTokens.login}
-      totalTokens={profileTokens.totalTokens}
-      rarity={rarity.data}
-    />
-  );
-}
 
 function ProfileTokensResult({ login }: { login: string }) {
   const profileTokens = useProfileTokens(login);
@@ -36,7 +14,11 @@ function ProfileTokensResult({ login }: { login: string }) {
   }
   return (
     <section className="flex flex-col items-center gap-6">
-      <ProfileTokensCard profileTokens={profileTokens.data} />
+      <TokenCard
+        login={profileTokens.data.login}
+        totalTokens={profileTokens.data.totalTokens}
+        rarity={profileTokens.data.rarity}
+      />
       <ul>
         {Object.entries(profileTokens.data.tokensByAgent).map(
           ([agent, tokens]) => (

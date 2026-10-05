@@ -53,16 +53,22 @@ class AgenticCommit:
         return self.lines_added * TOKENS_PER_ADDED_LINE
 
 
-# v0 guess: the minimum tokens of rarity levels 1, 2, 3...; each is ten times the previous one.
-MIN_TOKENS_BY_RARITY_LEVEL = (0, 10_000_000, 100_000_000, 1_000_000_000, 10_000_000_000)
+class Rarity(StrEnum):
+    COMMON = "common"
+    RARE = "rare"
+    EPIC = "epic"
+    LEGENDARY = "legendary"
+    CHAMPION = "champion"
 
-# 1 is the lowest rarity; the page knows what each level is called and looks like.
-RarityLevel = NewType("RarityLevel", int)
 
-
-def find_rarity_level(tokens: int) -> RarityLevel:
-    """Pre: tokens >= 0. Post: the highest level whose minimum the tokens reach, from 1."""
-    return RarityLevel(sum(1 for min_tokens in MIN_TOKENS_BY_RARITY_LEVEL if tokens >= min_tokens))
+# v0 guess, lowest first: each tier is ten times the previous one (~3.3k added lines for rare).
+MIN_TOKENS_BY_RARITY = {
+    Rarity.COMMON: 0,
+    Rarity.RARE: 10_000_000,
+    Rarity.EPIC: 100_000_000,
+    Rarity.LEGENDARY: 1_000_000_000,
+    Rarity.CHAMPION: 10_000_000_000,
+}
 
 
 class ProfileNotFoundError(Exception):
@@ -89,3 +95,13 @@ class GithubProfile:
         for agentic_commit in self.agentic_commits:
             tokens_by_agent[agentic_commit.agent] += agentic_commit.tokens
         return dict(tokens_by_agent.most_common())
+
+    @property
+    def rarity(self) -> Rarity:
+        """Post: the highest rarity whose minimum the total tokens reach."""
+        reached_rarities = [
+            rarity
+            for rarity, min_tokens in MIN_TOKENS_BY_RARITY.items()
+            if self.total_tokens >= min_tokens
+        ]
+        return reached_rarities[-1]

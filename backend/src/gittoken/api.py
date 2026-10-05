@@ -1,17 +1,16 @@
 from typing import Annotated
 
 import httpx
-from fastapi import FastAPI, HTTPException, Path, Query, status
+from fastapi import FastAPI, HTTPException, Path, status
 from pydantic import BaseModel, SecretStr
 from pydantic_settings import BaseSettings
 
 from gittoken.domain import (
-    MIN_TOKENS_BY_RARITY_LEVEL,
+    MIN_TOKENS_BY_RARITY,
     Agent,
     ProfileNotFoundError,
-    RarityLevel,
+    Rarity,
     VerifiedGithubUsername,
-    find_rarity_level,
 )
 from gittoken.github import fetch_github_profile
 
@@ -25,11 +24,12 @@ class ApiSettings(BaseSettings):
 class ProfileTokensResponse(BaseModel):
     login: str
     total_tokens: int
+    rarity: Rarity
     tokens_by_agent: dict[Agent, int]
 
 
 class RarityResponse(BaseModel):
-    level: RarityLevel
+    rarity: Rarity
     min_tokens: int
 
 
@@ -50,20 +50,17 @@ def create_app() -> FastAPI:
         return ProfileTokensResponse(
             login=profile.login,
             total_tokens=profile.total_tokens,
+            rarity=profile.rarity,
             tokens_by_agent=profile.tokens_by_agent,
         )
 
     @app.get("/v1/rarities")
     def get_rarities() -> list[RarityResponse]:
-        """Post: lowest level first."""
+        """Post: lowest rarity first."""
         return [
-            RarityResponse(level=RarityLevel(level), min_tokens=min_tokens)
-            for level, min_tokens in enumerate(MIN_TOKENS_BY_RARITY_LEVEL, start=1)
+            RarityResponse(rarity=rarity, min_tokens=min_tokens)
+            for rarity, min_tokens in MIN_TOKENS_BY_RARITY.items()
         ]
-
-    @app.get("/v1/rarity")
-    def get_rarity(tokens: Annotated[int, Query(ge=0)]) -> RarityLevel:
-        return find_rarity_level(tokens)
 
     app.frontend("/", directory="frontend/dist")
     return app
