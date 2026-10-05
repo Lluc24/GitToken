@@ -53,6 +53,24 @@ class AgenticCommit:
         return self.lines_added * TOKENS_PER_ADDED_LINE
 
 
+class Rarity(StrEnum):
+    COMMON = "common"
+    RARE = "rare"
+    EPIC = "epic"
+    LEGENDARY = "legendary"
+    CHAMPION = "champion"
+
+
+# v0 guess, lowest first: each tier is ten times the previous one (~3.3k added lines for rare).
+MIN_TOKENS_BY_RARITY = {
+    Rarity.COMMON: 0,
+    Rarity.RARE: 10_000_000,
+    Rarity.EPIC: 100_000_000,
+    Rarity.LEGENDARY: 1_000_000_000,
+    Rarity.CHAMPION: 10_000_000_000,
+}
+
+
 class ProfileNotFoundError(Exception):
     pass
 
