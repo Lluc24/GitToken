@@ -71,6 +71,14 @@ MIN_TOKENS_BY_RARITY = {
 }
 
 
+def find_rarity(tokens: int) -> Rarity:
+    """Pre: tokens >= 0. Post: the highest rarity whose minimum the tokens reach."""
+    reached_rarities = [
+        rarity for rarity, min_tokens in MIN_TOKENS_BY_RARITY.items() if tokens >= min_tokens
+    ]
+    return reached_rarities[-1]
+
+
 class ProfileNotFoundError(Exception):
     pass
 
@@ -95,13 +103,3 @@ class GithubProfile:
         for agentic_commit in self.agentic_commits:
             tokens_by_agent[agentic_commit.agent] += agentic_commit.tokens
         return dict(tokens_by_agent.most_common())
-
-    @property
-    def rarity(self) -> Rarity:
-        """Post: the highest rarity whose minimum the total tokens reach."""
-        reached_rarities = [
-            rarity
-            for rarity, min_tokens in MIN_TOKENS_BY_RARITY.items()
-            if self.total_tokens >= min_tokens
-        ]
-        return reached_rarities[-1]

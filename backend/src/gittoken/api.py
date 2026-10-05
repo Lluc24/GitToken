@@ -1,7 +1,7 @@
 from typing import Annotated
 
 import httpx
-from fastapi import FastAPI, HTTPException, Path, status
+from fastapi import FastAPI, HTTPException, Path, Query, status
 from pydantic import BaseModel, SecretStr
 from pydantic_settings import BaseSettings
 
@@ -11,6 +11,7 @@ from gittoken.domain import (
     ProfileNotFoundError,
     Rarity,
     VerifiedGithubUsername,
+    find_rarity,
 )
 from gittoken.github import fetch_github_profile
 
@@ -24,7 +25,6 @@ class ApiSettings(BaseSettings):
 class ProfileTokensResponse(BaseModel):
     login: str
     total_tokens: int
-    rarity: Rarity
     tokens_by_agent: dict[Agent, int]
 
 
@@ -50,7 +50,6 @@ def create_app() -> FastAPI:
         return ProfileTokensResponse(
             login=profile.login,
             total_tokens=profile.total_tokens,
-            rarity=profile.rarity,
             tokens_by_agent=profile.tokens_by_agent,
         )
 
@@ -61,6 +60,10 @@ def create_app() -> FastAPI:
             RarityResponse(rarity=rarity, min_tokens=min_tokens)
             for rarity, min_tokens in MIN_TOKENS_BY_RARITY.items()
         ]
+
+    @app.get("/v1/rarity")
+    def get_rarity(tokens: Annotated[int, Query(ge=0)]) -> Rarity:
+        return find_rarity(tokens)
 
     app.frontend("/", directory="frontend/dist")
     return app

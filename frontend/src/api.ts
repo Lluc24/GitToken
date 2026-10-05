@@ -8,14 +8,12 @@ export type Rarity = z.infer<typeof rarity>;
 const profileTokensResponse = z.object({
   login: z.string(),
   total_tokens: z.number(),
-  rarity,
   tokens_by_agent: z.record(z.string(), z.number()),
 });
 
 export type ProfileTokens = {
   login: string;
   totalTokens: number;
-  rarity: Rarity;
   tokensByAgent: Record<string, number>;
 };
 
@@ -34,7 +32,6 @@ async function fetchProfileTokens(login: string): Promise<ProfileTokens> {
   return {
     login: body.login,
     totalTokens: body.total_tokens,
-    rarity: body.rarity,
     tokensByAgent: body.tokens_by_agent,
   };
 }
@@ -44,6 +41,23 @@ export function useProfileTokens(login: string) {
   return useQuery({
     queryKey: ["profile-tokens", login],
     queryFn: () => fetchProfileTokens(login),
+    retry: false,
+  });
+}
+
+async function fetchRarity(tokens: number): Promise<Rarity> {
+  const response = await fetch(`/v1/rarity?tokens=${tokens}`);
+  if (!response.ok) {
+    throw new Error(`The GitToken API answered ${response.status}`);
+  }
+  return rarity.parse(await response.json());
+}
+
+/** Pre: tokens >= 0. */
+export function useRarity(tokens: number) {
+  return useQuery({
+    queryKey: ["rarity", tokens],
+    queryFn: () => fetchRarity(tokens),
     retry: false,
   });
 }
