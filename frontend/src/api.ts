@@ -1,15 +1,21 @@
 import { useQuery } from "@tanstack/react-query";
 import { z } from "zod";
 
+const rarity = z.enum(["common", "rare", "epic", "legendary", "champion"]);
+
+export type Rarity = z.infer<typeof rarity>;
+
 const profileTokensResponse = z.object({
   login: z.string(),
   total_tokens: z.number(),
+  rarity,
   tokens_by_agent: z.record(z.string(), z.number()),
 });
 
 export type ProfileTokens = {
   login: string;
   totalTokens: number;
+  rarity: Rarity;
   tokensByAgent: Record<string, number>;
 };
 
@@ -28,6 +34,7 @@ async function fetchProfileTokens(login: string): Promise<ProfileTokens> {
   return {
     login: body.login,
     totalTokens: body.total_tokens,
+    rarity: body.rarity,
     tokensByAgent: body.tokens_by_agent,
   };
 }

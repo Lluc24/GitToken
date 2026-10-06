@@ -17,6 +17,7 @@ function ProfileTokensResult({ login }: { login: string }) {
       <TokenCard
         login={profileTokens.data.login}
         totalTokens={profileTokens.data.totalTokens}
+        rarity={profileTokens.data.rarity}
       />
       <ul>
         {Object.entries(profileTokens.data.tokensByAgent).map(
