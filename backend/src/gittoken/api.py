@@ -5,6 +5,7 @@ from fastapi import FastAPI, HTTPException, Path, status
 from pydantic import BaseModel, SecretStr
 from pydantic_settings import BaseSettings
 
+from gittoken.db import fetch_cached_profile, save_profile
 from gittoken.domain import (
     MIN_TOKENS_BY_RARITY,
     Agent,
@@ -19,6 +20,8 @@ _GITHUB_LOGIN_PATTERN = "^[A-Za-z0-9][A-Za-z0-9-]{0,38}$"
 
 class ApiSettings(BaseSettings):
     github_token: SecretStr
+    supabase_url: str
+    supabase_secret_key: SecretStr
 
 
 class ProfileTokensResponse(BaseModel):
@@ -41,8 +44,14 @@ def create_app() -> FastAPI:
     async def get_user_tokens(
         login: Annotated[VerifiedGithubUsername, Path(pattern=_GITHUB_LOGIN_PATTERN)],
     ) -> ProfileTokensResponse:
+        supabase_secret_key = settings.supabase_secret_key.get_secret_value()
         try:
-            profile = await fetch_github_profile(settings.github_token.get_secret_value(), login)
+            profile = await fetch_cached_profile(settings.supabase_url, supabase_secret_key, login)
+            if profile is None:
+                profile = await fetch_github_profile(
+                    settings.github_token.get_secret_value(), login
+                )
+                await save_profile(settings.supabase_url, supabase_secret_key, profile)
         except ProfileNotFoundError as error:
             raise HTTPException(status.HTTP_404_NOT_FOUND, str(error)) from error
         except httpx.HTTPError as error:
