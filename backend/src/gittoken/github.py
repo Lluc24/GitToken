@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 from gittoken.domain import (
     AgenticCommit,
     GithubProfile,
+    GithubUserId,
     ProfileNotFoundError,
     VerifiedGithubUsername,
     find_agent,
@@ -21,6 +22,7 @@ _COMMITS_SINCE = "2025-01-01T00:00:00Z"
 _REPOSITORIES_QUERY = """
 query($login: String!) {
   user(login: $login) {
+    databaseId
     repositories(first: 100, ownerAffiliations: OWNER, isFork: false, privacy: PUBLIC,
                  orderBy: {field: PUSHED_AT, direction: DESC}) {
       nodes { id pushedAt }
@@ -59,6 +61,7 @@ class _Repositories(BaseModel):
 
 
 class _User(BaseModel):
+    database_id: int = Field(alias="databaseId")
     repositories: _Repositories
 
 
@@ -153,4 +156,8 @@ async def fetch_github_profile(token: str, login: VerifiedGithubUsername) -> Git
                 if repository.pushed_at is not None and repository.pushed_at >= _COMMITS_SINCE
             )
         )
-    return GithubProfile(login, tuple(chain.from_iterable(agentic_commits_by_repository)))
+    return GithubProfile(
+        GithubUserId(data.user.database_id),
+        login,
+        tuple(chain.from_iterable(agentic_commits_by_repository)),
+    )

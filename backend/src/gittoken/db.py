@@ -4,45 +4,54 @@ from datetime import UTC, datetime, timedelta
 import httpx
 from pydantic import BaseModel
 
-from gittoken.domain import Agent, AgenticCommit, GithubProfile, VerifiedGithubUsername
+from gittoken.domain import (
+    Agent,
+    AgenticCommit,
+    GithubProfile,
+    GithubUserId,
+    VerifiedGithubUsername,
+)
 
 _TIMEOUT_SECONDS = 10
-_PROFILE_TTL = timedelta(days=1)
+_USER_TTL = timedelta(days=1)
 
 
-class _CachedProfile(BaseModel):
-    lines_added_by_agent: dict[Agent, int]
+class _UserAgent(BaseModel):
+    agent_id: Agent
+    lines_added: int
 
 
-def _profiles_url(supabase_url: str) -> str:
-    return f"{supabase_url.rstrip('/')}/rest/v1/github_profiles"
+class _User(BaseModel):
+    github_id: int
+    user_agents: list[_UserAgent]
 
 
 async def fetch_cached_profile(
     supabase_url: str, secret_key: str, login: VerifiedGithubUsername
 ) -> GithubProfile | None:
-    """Post: the profile cached in the last day, or None when there is none.
+    """Post: the profile saved in the last day, or None when there is none.
     Each agent's commits come back merged into one AgenticCommit."""
-    fresh_since = datetime.now(UTC) - _PROFILE_TTL
+    fresh_since = datetime.now(UTC) - _USER_TTL
     async with httpx.AsyncClient(timeout=_TIMEOUT_SECONDS) as http_client:
         response = await http_client.get(
-            _profiles_url(supabase_url),
+            f"{supabase_url.rstrip('/')}/rest/v1/users",
             headers={"apikey": secret_key},
             params={
-                "select": "lines_added_by_agent",
+                "select": "github_id,user_agents(agent_id,lines_added)",
                 "login": f"eq.{login.lower()}",
                 "fetched_at": f"gte.{fresh_since.isoformat()}",
             },
         )
     response.raise_for_status()
-    rows = [_CachedProfile.model_validate(row) for row in response.json()]
-    if not rows:
+    users = [_User.model_validate(row) for row in response.json()]
+    if not users:
         return None
     return GithubProfile(
+        GithubUserId(users[0].github_id),
         login,
         tuple(
-            AgenticCommit(agent, lines_added)
-            for agent, lines_added in rows[0].lines_added_by_agent.items()
+            AgenticCommit(user_agent.agent_id, user_agent.lines_added)
+            for user_agent in users[0].user_agents
         ),
     )
 
@@ -53,12 +62,12 @@ async def save_profile(supabase_url: str, secret_key: str, profile: GithubProfil
         lines_added_by_agent[agentic_commit.agent] += agentic_commit.lines_added
     async with httpx.AsyncClient(timeout=_TIMEOUT_SECONDS) as http_client:
         response = await http_client.post(
-            _profiles_url(supabase_url),
-            headers={"apikey": secret_key, "Prefer": "resolution=merge-duplicates"},
+            f"{supabase_url.rstrip('/')}/rest/v1/rpc/save_github_user",
+            headers={"apikey": secret_key},
             json={
-                "login": profile.login.lower(),
+                "user_github_id": profile.github_id,
+                "user_login": profile.login.lower(),
                 "lines_added_by_agent": lines_added_by_agent,
-                "fetched_at": datetime.now(UTC).isoformat(),
             },
         )
     response.raise_for_status()

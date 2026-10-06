@@ -78,9 +78,13 @@ class ProfileNotFoundError(Exception):
 # A username that passed the format check at the boundary.
 VerifiedGithubUsername = NewType("VerifiedGithubUsername", str)
 
+# GitHub's immutable numeric user id; logins can be renamed.
+GithubUserId = NewType("GithubUserId", int)
+
 
 @dataclass(frozen=True)
 class GithubProfile:
+    github_id: GithubUserId
     login: VerifiedGithubUsername
     agentic_commits: tuple[AgenticCommit, ...]
 
