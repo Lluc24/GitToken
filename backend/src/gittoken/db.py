@@ -44,16 +44,16 @@ async def fetch_cached_profile(
         )
     response.raise_for_status()
     users = [_User.model_validate(row) for row in response.json()]
-    if not users:
-        return None
-    return GithubProfile(
-        GithubUserId(users[0].github_id),
-        login,
-        tuple(
-            AgenticCommit(user_agent.agent_id, user_agent.lines_added)
-            for user_agent in users[0].user_agents
-        ),
-    )
+    if users:
+        return GithubProfile(
+            GithubUserId(users[0].github_id),
+            login,
+            tuple(
+                AgenticCommit(user_agent.agent_id, user_agent.lines_added)
+                for user_agent in users[0].user_agents
+            ),
+        )
+    return None
 
 
 async def save_profile(supabase_url: str, secret_key: str, profile: GithubProfile) -> None:
