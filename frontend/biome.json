@@ -15,6 +15,7 @@
     "enabled": true,
     "indentStyle": "space"
   },
+  "plugins": ["./no-type-assertion.grit"],
   "linter": {
     "enabled": true,
     "rules": {
