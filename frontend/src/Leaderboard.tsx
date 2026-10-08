@@ -4,11 +4,8 @@ import { formatTokens } from "./format";
 export function Leaderboard() {
   const result = useLeaderboard();
   return (
-    <section
-      className="mt-12 w-full rounded-2xl border border-white/10 bg-pitch-night/50 p-5"
-      id="leaderboard"
-    >
-      <h2 className="font-display text-2xl uppercase">Leaderboard</h2>
+    <section className="w-full rounded-2xl border border-white/10 bg-pitch-night/50 p-5">
+      <h1 className="font-display text-2xl uppercase">Leaderboard</h1>
       <p className="mt-2 text-muted text-sm">
         Profiles scanned in the last day. Estimated tokens, not a global
         ranking.
