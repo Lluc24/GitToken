@@ -3,10 +3,12 @@ from time import perf_counter
 from typing import Annotated
 
 import httpx
+import sentry_sdk
 from fastapi import FastAPI, HTTPException, Path, status
 from loguru import logger
 from pydantic import BaseModel, SecretStr
 from pydantic_settings import BaseSettings
+from sentry_sdk.integrations.loguru import LoguruIntegration
 
 from gittoken.db import fetch_cached_profile, save_profile
 from gittoken.domain import (
@@ -26,6 +28,7 @@ class ApiSettings(BaseSettings):
     github_token: SecretStr
     supabase_url: str
     supabase_secret_key: SecretStr
+    sentry_dsn: SecretStr = SecretStr("")
 
 
 class ProfileTokensResponse(BaseModel):
@@ -42,6 +45,15 @@ class RarityResponse(BaseModel):
 
 def create_app() -> FastAPI:
     settings = ApiSettings()
+    if settings.sentry_dsn.get_secret_value():
+        sentry_sdk.init(
+            dsn=settings.sentry_dsn.get_secret_value(),
+            default_integrations=False,
+            integrations=[LoguruIntegration(level=None, event_level="WARNING")],
+            send_default_pii=False,
+            include_local_variables=False,
+            traces_sample_rate=0,
+        )
     logger.remove()
     logger.add(sys.stderr, serialize=True, diagnose=False, backtrace=False)
     app = FastAPI(title="GitToken")
