@@ -2,7 +2,7 @@
 members = ["backend", "infra"]
 
 [dependency-groups]
-dev = ["ruff>=0.16.10", "mypy>=1.18"]
+dev = ["ruff>=0.16.10", "mypy>=2.4.0"]
 
 [tool.ruff]
 target-version = "py313"
