@@ -1,3 +1,4 @@
+import logging
 import sys
 from time import perf_counter
 from typing import Annotated
@@ -45,17 +46,24 @@ class RarityResponse(BaseModel):
 
 def create_app() -> FastAPI:
     settings = ApiSettings()
+    logger.remove()
+    logger.add(sys.stderr, serialize=True, diagnose=False, backtrace=False)
     if settings.sentry_dsn.get_secret_value():
         sentry_sdk.init(
             dsn=settings.sentry_dsn.get_secret_value(),
             default_integrations=False,
-            integrations=[LoguruIntegration(level=None, event_level="WARNING")],
+            integrations=[
+                LoguruIntegration(
+                    level=None,
+                    event_level=logging.WARNING,
+                    sentry_logs_level=None,
+                    capture_sentry_logs=False,
+                )
+            ],
             send_default_pii=False,
             include_local_variables=False,
             traces_sample_rate=0,
         )
-    logger.remove()
-    logger.add(sys.stderr, serialize=True, diagnose=False, backtrace=False)
     app = FastAPI(title="GitToken")
 
     @app.get("/v1/users/{login}")
