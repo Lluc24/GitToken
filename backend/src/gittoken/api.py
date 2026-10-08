@@ -5,13 +5,14 @@ from typing import Annotated
 
 import httpx
 import sentry_sdk
-from fastapi import FastAPI, HTTPException, Path, status
+from fastapi import FastAPI, HTTPException, Path, Response, status
 from loguru import logger
 from pydantic import BaseModel, SecretStr
 from pydantic_settings import BaseSettings
 from redis.exceptions import RedisError
 from sentry_sdk.integrations.loguru import LoguruIntegration
 
+from gittoken.badge import render_badge
 from gittoken.cache import fetch_profile_cache, save_profile_cache
 from gittoken.db import fetch_cached_profile, save_profile
 from gittoken.domain import (
@@ -112,6 +113,17 @@ def create_app() -> FastAPI:
             total_tokens=profile.total_tokens,
             rarity=profile.rarity,
             tokens_by_agent=profile.tokens_by_agent,
+        )
+
+    @app.get("/v1/badges/{login}.svg")
+    async def get_badge(
+        login: Annotated[VerifiedGithubUsername, Path(pattern=_GITHUB_LOGIN_PATTERN)],
+    ) -> Response:
+        profile = await get_user_tokens(login)
+        return Response(
+            render_badge(profile.login, profile.total_tokens),
+            media_type="image/svg+xml",
+            headers={"Cache-Control": "public, max-age=3600", "X-Content-Type-Options": "nosniff"},
         )
 
     @app.get("/v1/rarities")
