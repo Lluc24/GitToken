@@ -98,17 +98,11 @@ export function App() {
         )}
       </main>
       <footer className="mx-auto mt-12 max-w-4xl border-t border-white/10 px-6 py-8 text-muted text-sm">
-        <p className="font-display text-lg text-white">About GitToken</p>
-        <p className="mt-2 max-w-xl">
-          A rough estimate of coding-agent tokens from public GitHub commits,
-          not measured usage. Private repos and uncredited agent work are not
-          counted.
-        </p>
-        <p className="mt-4">
+        <p>
           Thank you to the open-source tools and coding agents behind every
           commit.
         </p>
       </footer>
     </div>
   );
-}
+            }
