@@ -14,7 +14,7 @@ from sentry_sdk.integrations.loguru import LoguruIntegration
 
 from gittoken.badge import render_badge
 from gittoken.cache import fetch_profile_cache, save_profile_cache
-from gittoken.db import fetch_cached_profile, save_profile
+from gittoken.db import LeaderboardEntry, fetch_cached_profile, fetch_leaderboard, save_profile
 from gittoken.domain import (
     MIN_TOKENS_BY_RARITY,
     Agent,
@@ -125,6 +125,15 @@ def create_app() -> FastAPI:
             media_type="image/svg+xml",
             headers={"Cache-Control": "public, max-age=3600", "X-Content-Type-Options": "nosniff"},
         )
+
+    @app.get("/v1/leaderboard")
+    async def get_leaderboard() -> list[LeaderboardEntry]:
+        try:
+            return await fetch_leaderboard(
+                settings.supabase_url, settings.supabase_secret_key.get_secret_value()
+            )
+        except httpx.HTTPError as error:
+            raise HTTPException(status.HTTP_502_BAD_GATEWAY, "Leaderboard unavailable") from error
 
     @app.get("/v1/rarities")
     def get_rarities() -> list[RarityResponse]:
