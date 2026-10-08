@@ -1,6 +1,7 @@
 import { type FormEvent, useState } from "react";
 import { AgentTokens } from "./AgentTokens";
 import { useProfileTokens } from "./api";
+import { Leaderboard } from "./Leaderboard";
 import { TokenCard } from "./TokenCard";
 
 function ProfileTokensResult({ login }: { login: string }) {
@@ -88,6 +89,7 @@ export function App() {
         {submittedLogin !== "" && (
           <ProfileTokensResult login={submittedLogin} />
         )}
+        <Leaderboard />
       </main>
       <footer className="mx-auto mt-12 max-w-4xl border-t border-white/10 px-6 py-8 text-muted text-sm">
         <p className="font-display text-lg text-white">About GitToken</p>
