@@ -9,11 +9,9 @@ from fastapi import FastAPI, HTTPException, Path, Response, status
 from loguru import logger
 from pydantic import BaseModel, SecretStr
 from pydantic_settings import BaseSettings
-from redis.exceptions import RedisError
 from sentry_sdk.integrations.loguru import LoguruIntegration
 
 from gittoken.badge import render_badge
-from gittoken.cache import fetch_profile_cache, save_profile_cache
 from gittoken.db import LeaderboardEntry, fetch_cached_profile, fetch_leaderboard, save_profile
 from gittoken.domain import (
     MIN_TOKENS_BY_RARITY,
@@ -34,7 +32,6 @@ class ApiSettings(BaseSettings):
     supabase_url: str
     supabase_secret_key: SecretStr
     otel_exporter_otlp_endpoint: str = ""
-    redis_url: SecretStr = SecretStr("")
     sentry_dsn: SecretStr = SecretStr("")
 
 
@@ -76,24 +73,17 @@ def create_app() -> FastAPI:
     @app.get("/v1/users/{login}")
     async def get_user_tokens(
         login: Annotated[VerifiedGithubUsername, Path(pattern=_GITHUB_LOGIN_PATTERN)],
+        response: Response,
     ) -> ProfileTokensResponse:
         started_at = perf_counter()
         supabase_secret_key = settings.supabase_secret_key.get_secret_value()
         try:
-            if settings.redis_url.get_secret_value():
-                with tracer.start_as_current_span(
-                    "cache.redis.read", record_exception=False, set_status_on_exception=False
-                ):
-                    profile = await fetch_profile_cache(
-                        settings.redis_url.get_secret_value(), login
-                    )
-            else:
-                with tracer.start_as_current_span(
-                    "cache.supabase.read", record_exception=False, set_status_on_exception=False
-                ):
-                    profile = await fetch_cached_profile(
-                        settings.supabase_url, supabase_secret_key, login
-                    )
+            with tracer.start_as_current_span(
+                "cache.supabase.read", record_exception=False, set_status_on_exception=False
+            ):
+                profile = await fetch_cached_profile(
+                    settings.supabase_url, supabase_secret_key, login
+                )
             cache_hit = profile is not None
             if profile is None:
                 with tracer.start_as_current_span(
@@ -106,28 +96,30 @@ def create_app() -> FastAPI:
                     "profile.persist", record_exception=False, set_status_on_exception=False
                 ):
                     await save_profile(settings.supabase_url, supabase_secret_key, profile)
-                if settings.redis_url.get_secret_value():
-                    with tracer.start_as_current_span(
-                        "cache.redis.write", record_exception=False, set_status_on_exception=False
-                    ):
-                        await save_profile_cache(settings.redis_url.get_secret_value(), profile)
         except ProfileNotFoundError as error:
             logger.bind(
                 event="profile_not_found", duration_seconds=perf_counter() - started_at
             ).info("Profile lookup returned no user")
-            raise HTTPException(status.HTTP_404_NOT_FOUND, str(error)) from error
-        except (httpx.HTTPError, GithubRequestError, RedisError) as error:
+            raise HTTPException(
+                status.HTTP_404_NOT_FOUND, str(error), headers={"Cache-Control": "no-store"}
+            ) from error
+        except (httpx.HTTPError, GithubRequestError) as error:
             logger.bind(
                 event="profile_upstream_error",
                 error_type=type(error).__name__,
                 duration_seconds=perf_counter() - started_at,
             ).warning("Profile lookup failed")
-            raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(error)) from error
+            raise HTTPException(
+                status.HTTP_502_BAD_GATEWAY, str(error), headers={"Cache-Control": "no-store"}
+            ) from error
         logger.bind(
             event="profile_lookup",
             cache_hit=cache_hit,
             duration_seconds=perf_counter() - started_at,
         ).info("Profile lookup completed")
+        response.headers["Cache-Control"] = (
+            "public, max-age=0, s-maxage=3600, stale-while-revalidate=3600"
+        )
         return ProfileTokensResponse(
             login=profile.login,
             total_tokens=profile.total_tokens,
@@ -139,21 +131,33 @@ def create_app() -> FastAPI:
     async def get_badge(
         login: Annotated[VerifiedGithubUsername, Path(pattern=_GITHUB_LOGIN_PATTERN)],
     ) -> Response:
-        profile = await get_user_tokens(login)
+        profile = await get_user_tokens(login, Response())
         return Response(
             render_badge(profile.login, profile.total_tokens),
             media_type="image/svg+xml",
-            headers={"Cache-Control": "public, max-age=3600", "X-Content-Type-Options": "nosniff"},
+            headers={
+                "Cache-Control": "public, max-age=0, s-maxage=3600, stale-while-revalidate=3600",
+                "X-Content-Type-Options": "nosniff",
+            },
         )
 
     @app.get("/v1/leaderboard")
-    async def get_leaderboard() -> list[LeaderboardEntry]:
+    async def get_leaderboard(response: Response) -> list[LeaderboardEntry]:
         try:
-            return await fetch_leaderboard(
+            entries = await fetch_leaderboard(
                 settings.supabase_url, settings.supabase_secret_key.get_secret_value()
             )
         except httpx.HTTPError as error:
-            raise HTTPException(status.HTTP_502_BAD_GATEWAY, "Leaderboard unavailable") from error
+            raise HTTPException(
+                status.HTTP_502_BAD_GATEWAY,
+                "Leaderboard unavailable",
+                headers={"Cache-Control": "no-store"},
+            ) from error
+
+        response.headers["Cache-Control"] = (
+            "public, max-age=0, s-maxage=60, stale-while-revalidate=300"
+        )
+        return entries
 
     @app.get("/v1/rarities")
     def get_rarities() -> list[RarityResponse]:
