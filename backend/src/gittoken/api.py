@@ -9,8 +9,10 @@ from fastapi import FastAPI, HTTPException, Path, status
 from loguru import logger
 from pydantic import BaseModel, SecretStr
 from pydantic_settings import BaseSettings
+from redis.exceptions import RedisError
 from sentry_sdk.integrations.loguru import LoguruIntegration
 
+from gittoken.cache import fetch_profile_cache, save_profile_cache
 from gittoken.db import fetch_cached_profile, save_profile
 from gittoken.domain import (
     MIN_TOKENS_BY_RARITY,
@@ -29,6 +31,7 @@ class ApiSettings(BaseSettings):
     github_token: SecretStr
     supabase_url: str
     supabase_secret_key: SecretStr
+    redis_url: SecretStr = SecretStr("")
     sentry_dsn: SecretStr = SecretStr("")
 
 
@@ -73,19 +76,26 @@ def create_app() -> FastAPI:
         started_at = perf_counter()
         supabase_secret_key = settings.supabase_secret_key.get_secret_value()
         try:
-            profile = await fetch_cached_profile(settings.supabase_url, supabase_secret_key, login)
+            if settings.redis_url.get_secret_value():
+                profile = await fetch_profile_cache(settings.redis_url.get_secret_value(), login)
+            else:
+                profile = await fetch_cached_profile(
+                    settings.supabase_url, supabase_secret_key, login
+                )
             cache_hit = profile is not None
             if profile is None:
                 profile = await fetch_github_profile(
                     settings.github_token.get_secret_value(), login
                 )
                 await save_profile(settings.supabase_url, supabase_secret_key, profile)
+                if settings.redis_url.get_secret_value():
+                    await save_profile_cache(settings.redis_url.get_secret_value(), profile)
         except ProfileNotFoundError as error:
             logger.bind(
                 event="profile_not_found", duration_seconds=perf_counter() - started_at
             ).info("Profile lookup returned no user")
             raise HTTPException(status.HTTP_404_NOT_FOUND, str(error)) from error
-        except (httpx.HTTPError, GithubRequestError) as error:
+        except (httpx.HTTPError, GithubRequestError, RedisError) as error:
             logger.bind(
                 event="profile_upstream_error",
                 error_type=type(error).__name__,
