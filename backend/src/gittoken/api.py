@@ -24,6 +24,7 @@ from gittoken.domain import (
     VerifiedGithubUsername,
 )
 from gittoken.github import fetch_github_profile
+from gittoken.telemetry import configure_tracing, tracer
 
 _GITHUB_LOGIN_PATTERN = "^[A-Za-z0-9][A-Za-z0-9-]{0,38}$"
 
@@ -32,6 +33,7 @@ class ApiSettings(BaseSettings):
     github_token: SecretStr
     supabase_url: str
     supabase_secret_key: SecretStr
+    otel_exporter_otlp_endpoint: str = ""
     redis_url: SecretStr = SecretStr("")
     sentry_dsn: SecretStr = SecretStr("")
 
@@ -68,6 +70,7 @@ def create_app() -> FastAPI:
             include_local_variables=False,
             traces_sample_rate=0,
         )
+    configure_tracing(settings.otel_exporter_otlp_endpoint)
     app = FastAPI(title="GitToken")
 
     @app.get("/v1/users/{login}")
@@ -78,19 +81,33 @@ def create_app() -> FastAPI:
         supabase_secret_key = settings.supabase_secret_key.get_secret_value()
         try:
             if settings.redis_url.get_secret_value():
-                profile = await fetch_profile_cache(settings.redis_url.get_secret_value(), login)
+                with tracer.start_as_current_span(
+                    "cache.redis.read", record_exception=False, set_status_on_exception=False
+                ):
+                    profile = await fetch_profile_cache(
+                        settings.redis_url.get_secret_value(), login
+                    )
             else:
                 profile = await fetch_cached_profile(
                     settings.supabase_url, supabase_secret_key, login
                 )
             cache_hit = profile is not None
             if profile is None:
-                profile = await fetch_github_profile(
-                    settings.github_token.get_secret_value(), login
-                )
-                await save_profile(settings.supabase_url, supabase_secret_key, profile)
+                with tracer.start_as_current_span(
+                    "github.scan", record_exception=False, set_status_on_exception=False
+                ):
+                    profile = await fetch_github_profile(
+                        settings.github_token.get_secret_value(), login
+                    )
+                with tracer.start_as_current_span(
+                    "profile.persist", record_exception=False, set_status_on_exception=False
+                ):
+                    await save_profile(settings.supabase_url, supabase_secret_key, profile)
                 if settings.redis_url.get_secret_value():
-                    await save_profile_cache(settings.redis_url.get_secret_value(), profile)
+                    with tracer.start_as_current_span(
+                        "cache.redis.write", record_exception=False, set_status_on_exception=False
+                    ):
+                        await save_profile_cache(settings.redis_url.get_secret_value(), profile)
         except ProfileNotFoundError as error:
             logger.bind(
                 event="profile_not_found", duration_seconds=perf_counter() - started_at
