@@ -9,6 +9,7 @@ from gittoken.db import fetch_cached_profile, save_profile
 from gittoken.domain import (
     MIN_TOKENS_BY_RARITY,
     Agent,
+    GithubRequestError,
     ProfileNotFoundError,
     Rarity,
     VerifiedGithubUsername,
@@ -54,7 +55,7 @@ def create_app() -> FastAPI:
                 await save_profile(settings.supabase_url, supabase_secret_key, profile)
         except ProfileNotFoundError as error:
             raise HTTPException(status.HTTP_404_NOT_FOUND, str(error)) from error
-        except httpx.HTTPError as error:
+        except (httpx.HTTPError, GithubRequestError) as error:
             raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(error)) from error
         return ProfileTokensResponse(
             login=profile.login,

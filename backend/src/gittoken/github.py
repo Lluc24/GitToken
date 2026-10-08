@@ -1,12 +1,14 @@
 import asyncio
 from itertools import chain
+from typing import Self
 
 import httpx
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from gittoken.domain import (
     AgenticCommit,
     GithubProfile,
+    GithubRequestError,
     GithubUserId,
     ProfileNotFoundError,
     VerifiedGithubUsername,
@@ -20,11 +22,12 @@ _MAXIMUM_CONNECTIONS = 8
 _COMMITS_SINCE = "2025-01-01T00:00:00Z"
 
 _REPOSITORIES_QUERY = """
-query($login: String!) {
+query($login: String!, $cursor: String) {
   user(login: $login) {
     databaseId
     repositories(first: 100, ownerAffiliations: OWNER, isFork: false, privacy: PUBLIC,
-                 orderBy: {field: PUSHED_AT, direction: DESC}) {
+                 orderBy: {field: PUSHED_AT, direction: DESC}, after: $cursor) {
+      pageInfo { hasNextPage endCursor }
       nodes { id pushedAt }
     }
   }
@@ -56,7 +59,19 @@ class _Repository(BaseModel):
     pushed_at: str | None = Field(alias="pushedAt")
 
 
+class _PageInfo(BaseModel):
+    has_next_page: bool = Field(alias="hasNextPage")
+    end_cursor: str | None = Field(alias="endCursor")
+
+    @model_validator(mode="after")
+    def validate_cursor(self) -> Self:
+        if self.has_next_page and not self.end_cursor:
+            raise ValueError("a next page requires a non-empty cursor")
+        return self
+
+
 class _Repositories(BaseModel):
+    page_info: _PageInfo = Field(alias="pageInfo")
     nodes: list[_Repository]
 
 
@@ -67,6 +82,15 @@ class _User(BaseModel):
 
 class _UserData(BaseModel):
     user: _User | None
+
+
+class _GraphqlError(BaseModel):
+    message: str
+
+
+class _GraphqlResponse(BaseModel):
+    data: object = None
+    errors: list[_GraphqlError] = Field(default_factory=list)
 
 
 class _Author(BaseModel):
@@ -80,11 +104,6 @@ class _Authors(BaseModel):
 class _Commit(BaseModel):
     additions: int
     authors: _Authors
-
-
-class _PageInfo(BaseModel):
-    has_next_page: bool = Field(alias="hasNextPage")
-    end_cursor: str | None = Field(alias="endCursor")
 
 
 class _History(BaseModel):
@@ -113,7 +132,10 @@ async def _query(
 ) -> object:
     response = await http_client.post(_GRAPHQL_URL, json={"query": query, "variables": variables})
     response.raise_for_status()
-    return response.json()["data"]
+    result = _GraphqlResponse.model_validate(response.json())
+    if result.errors or result.data is None:
+        raise GithubRequestError("GitHub could not complete the profile lookup")
+    return result.data
 
 
 async def _fetch_repository_agentic_commits(
@@ -133,31 +155,58 @@ async def _fetch_repository_agentic_commits(
                 agentic_commits.append(AgenticCommit(agent, commit.additions))
         if not history.page_info.has_next_page:
             return agentic_commits
+        if history.page_info.end_cursor == cursor:
+            raise GithubRequestError("GitHub repeated a commit pagination cursor")
         cursor = history.page_info.end_cursor
 
 
+async def _fetch_repositories(
+    http_client: httpx.AsyncClient, login: VerifiedGithubUsername
+) -> _User:
+    repositories: list[_Repository] = []
+    cursor: str | None = None
+    while True:
+        data = _UserData.model_validate(
+            await _query(http_client, _REPOSITORIES_QUERY, {"login": login, "cursor": cursor})
+        )
+        if data.user is None:
+            raise ProfileNotFoundError(f"no GitHub user named {login!r}")
+        page = data.user.repositories
+        repositories.extend(
+            repository
+            for repository in page.nodes
+            if repository.pushed_at is not None and repository.pushed_at >= _COMMITS_SINCE
+        )
+        if not page.page_info.has_next_page or any(
+            repository.pushed_at is not None and repository.pushed_at < _COMMITS_SINCE
+            for repository in page.nodes
+        ):
+            return _User(
+                databaseId=data.user.database_id,
+                repositories=_Repositories(pageInfo=page.page_info, nodes=repositories),
+            )
+        if page.page_info.end_cursor == cursor:
+            raise GithubRequestError("GitHub repeated a repository pagination cursor")
+        cursor = page.page_info.end_cursor
+
+
 async def fetch_github_profile(token: str, login: VerifiedGithubUsername) -> GithubProfile:
-    """Post: the profile with the agentic commits of its 100 most recently pushed public non-fork repositories,
-    or ProfileNotFoundError."""
+    """Post: all agentic commits since 2025 across public non-fork repositories,
+    or ProfileNotFoundError. Incomplete GitHub responses raise GithubRequestError."""
     async with httpx.AsyncClient(
         headers={"Authorization": f"Bearer {token}"},
         timeout=httpx.Timeout(_TIMEOUT_SECONDS, pool=None),
         limits=httpx.Limits(max_connections=_MAXIMUM_CONNECTIONS),
     ) as http_client:
-        data = _UserData.model_validate(
-            await _query(http_client, _REPOSITORIES_QUERY, {"login": login})
-        )
-        if data.user is None:
-            raise ProfileNotFoundError(f"no GitHub user named {login!r}")
+        user = await _fetch_repositories(http_client, login)
         agentic_commits_by_repository = await asyncio.gather(
             *(
                 _fetch_repository_agentic_commits(http_client, repository.id)
-                for repository in data.user.repositories.nodes
-                if repository.pushed_at is not None and repository.pushed_at >= _COMMITS_SINCE
+                for repository in user.repositories.nodes
             )
         )
     return GithubProfile(
-        GithubUserId(data.user.database_id),
+        GithubUserId(user.database_id),
         login,
         tuple(chain.from_iterable(agentic_commits_by_repository)),
     )

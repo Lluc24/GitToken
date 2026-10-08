@@ -71,6 +71,10 @@ MIN_TOKENS_BY_RARITY = {
 }
 
 
+class GithubRequestError(Exception):
+    pass
+
+
 class ProfileNotFoundError(Exception):
     pass
 
