@@ -88,9 +88,12 @@ def create_app() -> FastAPI:
                         settings.redis_url.get_secret_value(), login
                     )
             else:
-                profile = await fetch_cached_profile(
-                    settings.supabase_url, supabase_secret_key, login
-                )
+                with tracer.start_as_current_span(
+                    "cache.supabase.read", record_exception=False, set_status_on_exception=False
+                ):
+                    profile = await fetch_cached_profile(
+                        settings.supabase_url, supabase_secret_key, login
+                    )
             cache_hit = profile is not None
             if profile is None:
                 with tracer.start_as_current_span(
