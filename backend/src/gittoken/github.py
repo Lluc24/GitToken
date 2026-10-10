@@ -143,6 +143,7 @@ async def _fetch_repository_agentic_commits(
 ) -> list[AgenticCommit]:
     agentic_commits: list[AgenticCommit] = []
     cursor: str | None = None
+    seen_cursors: set[str] = set()
     while True:
         variables = {"repositoryId": repository_id, "since": _COMMITS_SINCE, "cursor": cursor}
         data = _CommitsData.model_validate(await _query(http_client, _COMMITS_QUERY, variables))
@@ -155,9 +156,11 @@ async def _fetch_repository_agentic_commits(
                 agentic_commits.append(AgenticCommit(agent, commit.additions))
         if not history.page_info.has_next_page:
             return agentic_commits
-        if history.page_info.end_cursor == cursor:
-            raise GithubRequestError("GitHub repeated a commit pagination cursor")
-        cursor = history.page_info.end_cursor
+        next_cursor = history.page_info.end_cursor
+        if next_cursor is None or next_cursor in seen_cursors:
+            raise GithubRequestError("GitHub returned an invalid commit pagination cursor")
+        seen_cursors.add(next_cursor)
+        cursor = next_cursor
 
 
 async def _fetch_repositories(
@@ -165,6 +168,7 @@ async def _fetch_repositories(
 ) -> _User:
     repositories: list[_Repository] = []
     cursor: str | None = None
+    seen_cursors: set[str] = set()
     while True:
         data = _UserData.model_validate(
             await _query(http_client, _REPOSITORIES_QUERY, {"login": login, "cursor": cursor})
@@ -185,9 +189,11 @@ async def _fetch_repositories(
                 databaseId=data.user.database_id,
                 repositories=_Repositories(pageInfo=page.page_info, nodes=repositories),
             )
-        if page.page_info.end_cursor == cursor:
-            raise GithubRequestError("GitHub repeated a repository pagination cursor")
-        cursor = page.page_info.end_cursor
+        next_cursor = page.page_info.end_cursor
+        if next_cursor is None or next_cursor in seen_cursors:
+            raise GithubRequestError("GitHub returned an invalid repository pagination cursor")
+        seen_cursors.add(next_cursor)
+        cursor = next_cursor
 
 
 async def fetch_github_profile(token: str, login: VerifiedGithubUsername) -> GithubProfile:
@@ -209,4 +215,4 @@ async def fetch_github_profile(token: str, login: VerifiedGithubUsername) -> Git
         GithubUserId(user.database_id),
         login,
         tuple(chain.from_iterable(agentic_commits_by_repository)),
-    )
+        )
