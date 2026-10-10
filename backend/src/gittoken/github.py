@@ -215,4 +215,4 @@ async def fetch_github_profile(token: str, login: VerifiedGithubUsername) -> Git
         GithubUserId(user.database_id),
         login,
         tuple(chain.from_iterable(agentic_commits_by_repository)),
-        )
+    )
