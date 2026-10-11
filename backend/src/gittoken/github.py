@@ -3,7 +3,7 @@ from itertools import chain
 from typing import Self
 
 import httpx
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, ValidationError, model_validator
 
 from gittoken.domain import (
     AgenticCommit,
@@ -132,7 +132,10 @@ async def _query(
 ) -> object:
     response = await http_client.post(_GRAPHQL_URL, json={"query": query, "variables": variables})
     response.raise_for_status()
-    result = _GraphqlResponse.model_validate(response.json())
+    try:
+        result = _GraphqlResponse.model_validate(response.json())
+    except ValidationError as error:
+        raise GithubRequestError("GitHub returned an invalid GraphQL response") from error
     if result.errors or result.data is None:
         raise GithubRequestError("GitHub could not complete the profile lookup")
     return result.data
@@ -145,7 +148,10 @@ async def _fetch_repository_agentic_commits(
     cursor: str | None = None
     while True:
         variables = {"repositoryId": repository_id, "since": _COMMITS_SINCE, "cursor": cursor}
-        data = _CommitsData.model_validate(await _query(http_client, _COMMITS_QUERY, variables))
+        try:
+            data = _CommitsData.model_validate(await _query(http_client, _COMMITS_QUERY, variables))
+        except ValidationError as error:
+            raise GithubRequestError("GitHub returned invalid commit data") from error
         if data.node.default_branch is None:
             return agentic_commits
         history = data.node.default_branch.target.history
@@ -166,9 +172,12 @@ async def _fetch_repositories(
     repositories: list[_Repository] = []
     cursor: str | None = None
     while True:
-        data = _UserData.model_validate(
-            await _query(http_client, _REPOSITORIES_QUERY, {"login": login, "cursor": cursor})
-        )
+        try:
+            data = _UserData.model_validate(
+                await _query(http_client, _REPOSITORIES_QUERY, {"login": login, "cursor": cursor})
+            )
+        except ValidationError as error:
+            raise GithubRequestError("GitHub returned invalid repository data") from error
         if data.user is None:
             raise ProfileNotFoundError(f"no GitHub user named {login!r}")
         page = data.user.repositories
