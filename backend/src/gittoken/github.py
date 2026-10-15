@@ -110,7 +110,7 @@ class _Authors(BaseModel):
 
 
 class _Commit(BaseModel):
-    additions: int = Field(ge=0)
+    additions: int = Field(strict=True, ge=0)
     authors: _Authors
 
 
