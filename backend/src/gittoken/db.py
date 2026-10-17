@@ -1,4 +1,3 @@
-from collections import Counter
 from datetime import UTC, datetime, timedelta
 
 import httpx
@@ -57,9 +56,6 @@ async def fetch_cached_profile(
 
 
 async def save_profile(supabase_url: str, secret_key: str, profile: GithubProfile) -> None:
-    lines_added_by_agent: Counter[Agent] = Counter()
-    for agentic_commit in profile.agentic_commits:
-        lines_added_by_agent[agentic_commit.agent] += agentic_commit.lines_added
     async with httpx.AsyncClient(timeout=_TIMEOUT_SECONDS) as http_client:
         response = await http_client.post(
             f"{supabase_url.rstrip('/')}/rest/v1/rpc/save_github_user",
@@ -67,7 +63,7 @@ async def save_profile(supabase_url: str, secret_key: str, profile: GithubProfil
             json={
                 "user_github_id": profile.github_id,
                 "user_login": profile.login.lower(),
-                "lines_added_by_agent": lines_added_by_agent,
+                "lines_added_by_agent": profile.lines_added_by_agent,
             },
         )
     response.raise_for_status()
