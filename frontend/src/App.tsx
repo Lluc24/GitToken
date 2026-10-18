@@ -1,6 +1,6 @@
 import { type FormEvent, useState } from "react";
+import { AgentTokens } from "./AgentTokens";
 import { useProfileTokens } from "./api";
-import { formatTokens } from "./format";
 import { TokenCard } from "./TokenCard";
 
 function ProfileTokensResult({ login }: { login: string }) {
@@ -19,15 +19,7 @@ function ProfileTokensResult({ login }: { login: string }) {
         totalTokens={profileTokens.data.totalTokens}
         rarity={profileTokens.data.rarity}
       />
-      <ul>
-        {Object.entries(profileTokens.data.tokensByAgent).map(
-          ([agent, tokens]) => (
-            <li key={agent}>
-              {agent}: {formatTokens(tokens)}
-            </li>
-          ),
-        )}
-      </ul>
+      <AgentTokens tokensByAgent={profileTokens.data.tokensByAgent} />
     </section>
   );
 }
