@@ -1,5 +1,7 @@
 from html import escape
 
+from gittoken.domain import Agent
+
 _CARD_WIDTH = 360
 _PADDING = 16
 _MAX_ROWS = 4
@@ -78,7 +80,7 @@ def _agent_row(agent: str, tokens: int, total: int, top: int) -> str:
 def render_badge(
     login: str,
     total_tokens: int,
-    tokens_by_agent: dict[str, int],
+    tokens_by_agent: dict[Agent, int],
     rarity: str,
 ) -> str:
     label = escape(login)
