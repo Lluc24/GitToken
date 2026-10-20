@@ -3,6 +3,10 @@ import { AgentTokens } from "./AgentTokens";
 import { useProfileTokens } from "./api";
 import { TokenCard } from "./TokenCard";
 
+function loginFromUrl(): string {
+  return new URLSearchParams(window.location.search).get("login") ?? "";
+}
+
 function ProfileTokensResult({ login }: { login: string }) {
   const profileTokens = useProfileTokens(login);
 
@@ -25,12 +29,15 @@ function ProfileTokensResult({ login }: { login: string }) {
 }
 
 export function App() {
-  const [typedLogin, setTypedLogin] = useState("");
-  const [submittedLogin, setSubmittedLogin] = useState("");
+  const [typedLogin, setTypedLogin] = useState(loginFromUrl);
+  const [submittedLogin, setSubmittedLogin] = useState(loginFromUrl);
 
   function submitLogin(event: FormEvent) {
     event.preventDefault();
-    setSubmittedLogin(typedLogin.trim());
+    const login = typedLogin.trim();
+    setSubmittedLogin(login);
+    const url = login === "" ? "/" : `/?login=${encodeURIComponent(login)}`;
+    window.history.replaceState(null, "", url);
   }
 
   return (
