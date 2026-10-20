@@ -5,12 +5,13 @@ from typing import Annotated
 
 import httpx
 import sentry_sdk
-from fastapi import FastAPI, HTTPException, Path, status
+from fastapi import FastAPI, HTTPException, Path, Response, status
 from loguru import logger
 from pydantic import BaseModel, SecretStr
 from pydantic_settings import BaseSettings
 from sentry_sdk.integrations.loguru import LoguruIntegration
 
+from gittoken.badge import render_badge
 from gittoken.db import fetch_cached_profile, save_profile
 from gittoken.domain import (
     MIN_TOKENS_BY_RARITY,
@@ -69,6 +70,7 @@ def create_app() -> FastAPI:
     @app.get("/v1/users/{login}")
     async def get_user_tokens(
         login: Annotated[VerifiedGithubUsername, Path(pattern=_GITHUB_LOGIN_PATTERN)],
+        response: Response,
     ) -> ProfileTokensResponse:
         started_at = perf_counter()
         supabase_secret_key = settings.supabase_secret_key.get_secret_value()
@@ -84,24 +86,50 @@ def create_app() -> FastAPI:
             logger.bind(
                 event="profile_not_found", duration_seconds=perf_counter() - started_at
             ).info("Profile lookup returned no user")
-            raise HTTPException(status.HTTP_404_NOT_FOUND, str(error)) from error
+            raise HTTPException(
+                status.HTTP_404_NOT_FOUND, str(error), headers={"Cache-Control": "no-store"}
+            ) from error
         except (httpx.HTTPError, GithubRequestError) as error:
             logger.bind(
                 event="profile_upstream_error",
                 error_type=type(error).__name__,
                 duration_seconds=perf_counter() - started_at,
             ).warning("Profile lookup failed")
-            raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(error)) from error
+            raise HTTPException(
+                status.HTTP_502_BAD_GATEWAY, str(error), headers={"Cache-Control": "no-store"}
+            ) from error
         logger.bind(
             event="profile_lookup",
             cache_hit=cache_hit,
             duration_seconds=perf_counter() - started_at,
         ).info("Profile lookup completed")
+        response.headers["Cache-Control"] = (
+            "public, max-age=0, s-maxage=3600, stale-while-revalidate=3600"
+        )
         return ProfileTokensResponse(
             login=profile.login,
             total_tokens=profile.total_tokens,
             rarity=profile.rarity,
             tokens_by_agent=profile.tokens_by_agent,
+        )
+
+    @app.get("/v1/badges/{login}.svg")
+    async def get_badge(
+        login: Annotated[VerifiedGithubUsername, Path(pattern=_GITHUB_LOGIN_PATTERN)],
+    ) -> Response:
+        profile = await get_user_tokens(login, Response())
+        return Response(
+            render_badge(
+                profile.login,
+                profile.total_tokens,
+                profile.tokens_by_agent,
+                profile.rarity,
+            ),
+            media_type="image/svg+xml",
+            headers={
+                "Cache-Control": "public, max-age=0, s-maxage=3600, stale-while-revalidate=3600",
+                "X-Content-Type-Options": "nosniff",
+            },
         )
 
     @app.get("/v1/rarities")
