@@ -67,3 +67,23 @@ async def save_profile(supabase_url: str, secret_key: str, profile: GithubProfil
             },
         )
     response.raise_for_status()
+
+
+class LeaderboardEntry(BaseModel):
+    login: str
+    total_tokens: int
+
+
+async def fetch_leaderboard(supabase_url: str, secret_key: str) -> list[LeaderboardEntry]:
+    async with httpx.AsyncClient(timeout=_TIMEOUT_SECONDS) as http_client:
+        response = await http_client.get(
+            f"{supabase_url.rstrip('/')}/rest/v1/token_leaderboard",
+            headers={"apikey": secret_key},
+            params={
+                "select": "login,total_tokens",
+                "order": "total_tokens.desc,login.asc",
+                "limit": "50",
+            },
+        )
+    response.raise_for_status()
+    return [LeaderboardEntry.model_validate(row) for row in response.json()]
