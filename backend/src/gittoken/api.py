@@ -12,7 +12,7 @@ from pydantic_settings import BaseSettings
 from sentry_sdk.integrations.loguru import LoguruIntegration
 
 from gittoken.badge import render_badge
-from gittoken.db import fetch_cached_profile, save_profile
+from gittoken.db import LeaderboardEntry, fetch_cached_profile, fetch_leaderboard, save_profile
 from gittoken.domain import (
     MIN_TOKENS_BY_RARITY,
     Agent,
@@ -131,6 +131,24 @@ def create_app() -> FastAPI:
                 "X-Content-Type-Options": "nosniff",
             },
         )
+
+    @app.get("/v1/leaderboard")
+    async def get_leaderboard(response: Response) -> list[LeaderboardEntry]:
+        try:
+            entries = await fetch_leaderboard(
+                settings.supabase_url, settings.supabase_secret_key.get_secret_value()
+            )
+        except httpx.HTTPError as error:
+            raise HTTPException(
+                status.HTTP_502_BAD_GATEWAY,
+                "Leaderboard unavailable",
+                headers={"Cache-Control": "no-store"},
+            ) from error
+
+        response.headers["Cache-Control"] = (
+            "public, max-age=0, s-maxage=60, stale-while-revalidate=300"
+        )
+        return entries
 
     @app.get("/v1/rarities")
     def get_rarities() -> list[RarityResponse]:
