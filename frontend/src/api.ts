@@ -48,6 +48,25 @@ export function useProfileTokens(login: string) {
   });
 }
 
+const leaderboardResponse = z.array(
+  z.object({ login: z.string(), total_tokens: z.number() }),
+);
+
+async function fetchLeaderboard() {
+  const response = await fetch("/v1/leaderboard");
+  if (!response.ok)
+    throw new Error("The leaderboard is unavailable right now.");
+  return leaderboardResponse.parse(await response.json());
+}
+
+export function useLeaderboard() {
+  return useQuery({
+    queryKey: ["leaderboard"],
+    queryFn: fetchLeaderboard,
+    retry: false,
+  });
+}
+
 const agentsResponse = z.array(
   z.object({ agent: z.string(), name: z.string() }),
 );
