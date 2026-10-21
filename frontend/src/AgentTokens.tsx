@@ -1,19 +1,11 @@
 import { formatTokens } from "./format";
 
-const agentNames: Record<string, string> = {
-  claude_code: "Claude Code",
-  codex: "Codex",
-  copilot: "Copilot",
-  cursor: "Cursor",
-  devin: "Devin",
-  jules: "Jules",
-  aider: "Aider",
-};
-
 export function AgentTokens({
   tokensByAgent,
+  nameByAgent,
 }: {
   tokensByAgent: Record<string, number>;
+  nameByAgent: Record<string, string>;
 }) {
   const agents = Object.entries(tokensByAgent).sort(
     (left, right) => right[1] - left[1],
@@ -34,7 +26,7 @@ export function AgentTokens({
           {agents.map(([agent, tokens]) => (
             <li key={agent}>
               <div className="mb-1 flex justify-between gap-3 text-sm">
-                <span>{agentNames[agent] ?? agent}</span>
+                <span>{nameByAgent[agent] ?? agent}</span>
                 <span className="font-mono">
                   {formatTokens(tokens)}{" "}
                   <span className="text-muted">

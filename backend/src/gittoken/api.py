@@ -15,6 +15,7 @@ from gittoken.badge import render_badge
 from gittoken.db import LeaderboardEntry, fetch_cached_profile, fetch_leaderboard, save_profile
 from gittoken.domain import (
     MIN_TOKENS_BY_RARITY,
+    NAME_BY_AGENT,
     Agent,
     GithubRequestError,
     ProfileNotFoundError,
@@ -38,6 +39,11 @@ class ProfileTokensResponse(BaseModel):
     total_tokens: int
     rarity: Rarity
     tokens_by_agent: dict[Agent, int]
+
+
+class AgentResponse(BaseModel):
+    agent: Agent
+    name: str
 
 
 class RarityResponse(BaseModel):
@@ -149,6 +155,10 @@ def create_app() -> FastAPI:
             "public, max-age=0, s-maxage=60, stale-while-revalidate=300"
         )
         return entries
+
+    @app.get("/v1/agents")
+    def get_agents() -> list[AgentResponse]:
+        return [AgentResponse(agent=agent, name=name) for agent, name in NAME_BY_AGENT.items()]
 
     @app.get("/v1/rarities")
     def get_rarities() -> list[RarityResponse]:
