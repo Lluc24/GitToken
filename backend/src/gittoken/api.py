@@ -133,7 +133,12 @@ def create_app() -> FastAPI:
     ) -> Response:
         profile = await get_user_tokens(login, Response())
         return Response(
-            render_badge(profile.login, profile.total_tokens),
+            render_badge(
+                profile.login,
+                profile.total_tokens,
+                profile.tokens_by_agent,
+                profile.rarity,
+            ),
             media_type="image/svg+xml",
             headers={
                 "Cache-Control": "public, max-age=0, s-maxage=3600, stale-while-revalidate=3600",
