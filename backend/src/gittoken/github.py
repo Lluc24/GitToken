@@ -213,6 +213,31 @@ async def _fetch_repositories(
         cursor = next_cursor
 
 
+async def _fetch_agentic_commits(
+    http_client: httpx.AsyncClient, repositories: list[_Repository]
+) -> tuple[AgenticCommit, ...]:
+    pending_repositories = iter(enumerate(repositories))
+    commits_by_repository: list[list[AgenticCommit]] = [[] for _ in repositories]
+
+    async def fetch_next_repositories() -> None:
+        for index, repository in pending_repositories:
+            commits_by_repository[index] = await _fetch_repository_agentic_commits(
+                http_client, repository.id
+            )
+
+    workers = [
+        asyncio.create_task(fetch_next_repositories())
+        for _ in range(min(_MAXIMUM_CONNECTIONS, len(repositories)))
+    ]
+    try:
+        await asyncio.gather(*workers)
+        return tuple(chain.from_iterable(commits_by_repository))
+    finally:
+        for worker in workers:
+            worker.cancel()
+        await asyncio.gather(*workers, return_exceptions=True)
+
+
 async def fetch_github_profile(token: str, login: VerifiedGithubUsername) -> GithubProfile:
     """Post: all agentic commits since 2025 across public non-fork repositories,
     or ProfileNotFoundError. Incomplete GitHub responses raise GithubRequestError."""
@@ -222,14 +247,9 @@ async def fetch_github_profile(token: str, login: VerifiedGithubUsername) -> Git
         limits=httpx.Limits(max_connections=_MAXIMUM_CONNECTIONS),
     ) as http_client:
         user = await _fetch_repositories(http_client, login)
-        agentic_commits_by_repository = await asyncio.gather(
-            *(
-                _fetch_repository_agentic_commits(http_client, repository.id)
-                for repository in user.repositories.nodes
-            )
-        )
+        agentic_commits = await _fetch_agentic_commits(http_client, user.repositories.nodes)
     return GithubProfile(
         GithubUserId(user.database_id),
         login,
-        tuple(chain.from_iterable(agentic_commits_by_repository)),
+        agentic_commits,
     )
