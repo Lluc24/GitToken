@@ -9,7 +9,7 @@ type ShareCardProps = {
 };
 
 const buttonClassName =
-  "rounded-2xl border border-white/15 bg-pitch-night/60 px-4 py-2 font-display text-sm uppercase tracking-wider hover:border-card-gold";
+  "glass glass-interactive rounded-full px-4 py-2 font-medium text-sm text-white";
 
 export function ShareCard({ login, totalTokens, cardRef }: ShareCardProps) {
   const [status, setStatus] = useState("");

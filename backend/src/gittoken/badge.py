@@ -4,12 +4,12 @@ from jinja2 import Environment, PackageLoader, StrictUndefined
 
 from gittoken.domain import NAME_BY_AGENT, Agent
 
-_MAX_ROWS = 4
+_MAX_ROWS = 2
 
 
 @dataclass(frozen=True)
-class _AgentRow:
-    agent: Agent
+class _Row:
+    mark: str
     name: str
     tokens: int
     share: float
@@ -35,27 +35,30 @@ _environment.filters["compact_tokens"] = _format_tokens
 _template = _environment.get_template("badge.svg")
 
 
+def _row(mark: str, name: str, tokens: int, total_tokens: int) -> _Row:
+    share = tokens / total_tokens if total_tokens else 0
+    return _Row(mark=mark, name=name, tokens=tokens, share=share, percent=round(share * 100))
+
+
+def _rows(tokens_by_agent: dict[Agent, int], total_tokens: int) -> list[_Row]:
+    """Post: up to two agents by name; beyond that, the top agent plus the rest folded into Others."""
+    agents = sorted(tokens_by_agent.items(), key=lambda item: item[1], reverse=True)
+    rows = [_row(agent, NAME_BY_AGENT[agent], tokens, total_tokens) for agent, tokens in agents]
+    if len(rows) > _MAX_ROWS:
+        others_tokens = sum(row.tokens for row in rows[1:])
+        return [rows[0], _row("others", "Others", others_tokens, total_tokens)]
+    return rows
+
+
 def render_badge(
     login: str,
     total_tokens: int,
     tokens_by_agent: dict[Agent, int],
     rarity: str,
 ) -> str:
-    agents = sorted(tokens_by_agent.items(), key=lambda item: item[1], reverse=True)
-    rows = [
-        _AgentRow(
-            agent=agent,
-            name=NAME_BY_AGENT[agent],
-            tokens=tokens,
-            share=tokens / total_tokens if total_tokens else 0,
-            percent=round(tokens / total_tokens * 100) if total_tokens else 0,
-        )
-        for agent, tokens in agents[:_MAX_ROWS]
-    ]
     return _template.render(
         login=login,
         total_tokens=total_tokens,
         rarity=rarity,
-        rows=rows,
-        hidden_agent_count=len(agents) - len(rows),
+        rows=_rows(tokens_by_agent, total_tokens),
     )

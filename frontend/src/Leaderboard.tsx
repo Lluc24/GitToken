@@ -1,11 +1,17 @@
 import { useLeaderboard } from "./api";
 import { formatTokens } from "./format";
 
+const medalClassNames = [
+  "bg-gradient-to-br from-amber-200 to-amber-500 text-night",
+  "bg-gradient-to-br from-slate-100 to-slate-400 text-night",
+  "bg-gradient-to-br from-orange-300 to-orange-700 text-night",
+];
+
 export function Leaderboard() {
   const result = useLeaderboard();
   return (
-    <section className="w-full rounded-2xl border border-white/10 bg-pitch-night/50 p-5">
-      <h1 className="font-display text-2xl uppercase">Leaderboard</h1>
+    <section className="glass w-full rounded-[32px] p-6">
+      <h1 className="font-bold text-3xl tracking-tight">Leaderboard</h1>
       <p className="mt-2 text-muted text-sm">
         Profiles scanned in the last day. Estimated tokens, not a global
         ranking.
@@ -21,13 +27,25 @@ export function Leaderboard() {
           No recent profiles yet. Estimate a profile to get started.
         </p>
       ) : (
-        <ol className="mt-4 divide-y divide-white/10">
+        <ol className="mt-4 space-y-1.5">
           {result.data.map((profile, index) => (
-            <li key={profile.login} className="flex items-center gap-3 py-3">
-              <span className="w-6 text-muted">{index + 1}</span>
+            <li
+              key={profile.login}
+              className="flex items-center gap-3 rounded-2xl px-3 py-2.5 transition-colors hover:bg-white/10"
+            >
+              <span
+                className={`flex size-7 items-center justify-center rounded-full font-semibold text-xs ${medalClassNames[index] ?? "text-muted"}`}
+              >
+                {index + 1}
+              </span>
+              <img
+                src={`https://avatars.githubusercontent.com/${encodeURIComponent(profile.login)}?size=64`}
+                alt=""
+                className="size-8 rounded-full ring-1 ring-white/30"
+              />
               <a
                 href={`https://github.com/${encodeURIComponent(profile.login)}`}
-                className="min-w-0 flex-1 truncate hover:text-scout-green"
+                className="min-w-0 flex-1 truncate font-medium hover:text-cyan-200"
               >
                 {profile.login}
               </a>
