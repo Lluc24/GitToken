@@ -1,0 +1,32 @@
+{% set width = 360 %}
+{% set padding = 16 %}
+{% set inner = width - 2 * padding %}
+{% set rows_top = 62 %}
+{% set row_height = 34 %}
+{% set more_height = 18 if hidden_agent_count else 0 %}
+{% set height = rows_top + rows|length * row_height + more_height + padding - 6 %}
+{% set sans = "system-ui, -apple-system, 'Segoe UI', sans-serif" %}
+{% set mono = "ui-monospace, SFMono-Regular, Menlo, monospace" %}
+{% set aria = login ~ ": " ~ "{:,}".format(total_tokens) ~ " estimated tokens" %}
+<svg xmlns="http://www.w3.org/2000/svg" width="{{ width }}" height="{{ height }}" role="img" aria-label="{{ aria }}">
+  <title>{{ aria }}</title>
+  <rect width="{{ width }}" height="{{ height }}" rx="12" fill="#ffffff" stroke="#dfe3ea"/>
+  <text x="{{ padding }}" y="{{ padding + 15 }}" fill="#101528" font-family="{{ sans }}" font-size="15" font-weight="bold">{{ login }}</text>
+  <text x="{{ width - padding }}" y="{{ padding + 15 }}" text-anchor="end" fill="#101528" font-family="{{ mono }}" font-size="14" font-weight="bold">{{ total_tokens | compact_tokens }}</text>
+  <text x="{{ padding }}" y="{{ padding + 31 }}" fill="#6b7280" font-family="{{ sans }}" font-size="11">{{ rarity }} · {{ "{:,}".format(total_tokens) }} estimated tokens</text>
+  <rect x="{{ padding }}" y="48" width="{{ inner }}" height="1" fill="#eceff3"/>
+{% for row in rows %}
+{% set top = rows_top + loop.index0 * row_height %}
+{% set bar_width = [3, (inner * row.share) | round | int] | max if total_tokens else 0 %}
+  <g transform="translate({{ padding }} {{ top }})">
+    {% include "marks/" ~ row.agent ~ ".svg" ignore missing %}
+  </g>
+  <text x="{{ padding + 22 }}" y="{{ top + 11 }}" fill="#101528" font-family="{{ sans }}" font-size="12">{{ row.name }}</text>
+  <text x="{{ width - padding }}" y="{{ top + 11 }}" text-anchor="end" fill="#101528" font-family="{{ mono }}" font-size="12">{{ row.tokens | compact_tokens }} · {{ row.percent }}%</text>
+  <rect x="{{ padding }}" y="{{ top + 18 }}" width="{{ inner }}" height="6" rx="3" fill="#eceff3"/>
+  <rect x="{{ padding }}" y="{{ top + 18 }}" width="{{ bar_width }}" height="6" rx="3" fill="#5ec95a"/>
+{% endfor %}
+{% if hidden_agent_count %}
+  <text x="{{ padding }}" y="{{ rows_top + rows|length * row_height + 2 }}" fill="#6b7280" font-family="{{ sans }}" font-size="11">+{{ hidden_agent_count }} more agents</text>
+{% endif %}
+</svg>
