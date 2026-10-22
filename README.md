@@ -8,15 +8,18 @@
 
 ## How it works today
 
-One FastAPI service with one endpoint. Nothing is stored.
+One FastAPI service with the public routes under /v1. Profiles are cached in Supabase for a day.
 
 ```mermaid
 flowchart LR
     Browser -->|"GET /v1/users/{login}"| api[api.py]
-    api --> github[github.py]
+    api -->|cache hit| db[db.py]
+    db -->|REST| Supabase[(Supabase)]
+    api -->|cache miss| github[github.py]
     github -->|GraphQL| GitHub[(GitHub API)]
     github -->|agentic commits| domain[domain.py]
     domain -->|tokens per agent| api
+    api -->|save profile| db
 ```
 
 1. Read the user's public, non-fork repos pushed to since 2025.
@@ -41,9 +44,10 @@ Deployed on Vercel as one project: the FastAPI app also serves the built page. `
 | --- | --- | --- |
 | `backend/src/gittoken/domain.py` | Agents, agent emails, the lines → tokens formula | Lluc |
 | `backend/src/gittoken/github.py` | GitHub GraphQL queries | Marc |
+| `backend/src/gittoken/db.py` | Supabase profile cache | Lluc |
 | `backend/src/gittoken/api.py` | FastAPI app and the `/v1` routes | Lluc |
 | `frontend/` | React page that calls the endpoint | Lluc |
-| `infra/`, `supabase/`, `.github/` | AWS, database and CI/CD (not started) | Marc |
+| `infra/`, `supabase/`, `.github/` | AWS (not started), database and CI/CD | Marc |
 
 ## Rules
 
@@ -51,10 +55,8 @@ We start in the simplest shape that works and add structure when concrete code n
 
 ## Next, each when it is needed
 
-- **Frontend**: style the page and turn the result into a card.
-- **Cache**: store each profile's result so repeat views do not hit GitHub. Big profiles take minutes today.
 - **Better estimate**: calibrate the formula on real agent logs; show a range.
 - **Scale**: several GitHub tokens, then a queue and workers if a profile is too slow to compute in one request.
-- **Launch**: embeddable SVG/PNG card, leaderboard, deployment.
+- **Launch**: embeddable SVG/PNG card and leaderboard (in review), then deployment.
 
 The long-term design is in the [architecture proposal](https://claude.ai/code/artifact/953dfeaf-4523-4951-aa18-eed07d207661).
