@@ -5,54 +5,49 @@ import { formatTokens } from "./format";
 
 const maxAgentRows = 4;
 
-// Legendary and champion cards have cut corners in Clash Royale; the lower rarities are rounded.
-function cutCornersOutline(cutPixels: number): string {
-  return `polygon(${cutPixels}px 0, calc(100% - ${cutPixels}px) 0, 100% ${cutPixels}px, 100% calc(100% - ${cutPixels}px), calc(100% - ${cutPixels}px) 100%, ${cutPixels}px 100%, 0 calc(100% - ${cutPixels}px), 0 ${cutPixels}px)`;
-}
-
 type RarityStyle = {
-  frameClassName: string;
+  blobClassNames: [string, string, string];
+  barClassName: string;
   accentTextClassName: string;
-  accentBorderClassName: string;
   glowClassName: string;
-  hasCutCorners: boolean;
+  rimClassName: string;
 };
 
 const styleByRarity: Record<Rarity, RarityStyle> = {
   common: {
-    frameClassName: "from-card-common to-card-common-dark",
-    accentTextClassName: "text-card-common",
-    accentBorderClassName: "border-card-common",
-    glowClassName: "drop-shadow-[0_0_40px_rgba(228,233,239,0.2)]",
-    hasCutCorners: false,
+    blobClassNames: ["bg-blue-400", "bg-sky-300", "bg-indigo-300"],
+    barClassName: "from-blue-400 to-sky-300",
+    accentTextClassName: "text-sky-200",
+    glowClassName: "drop-shadow-[0_20px_50px_rgba(125,170,255,0.35)]",
+    rimClassName: "glass-rim",
   },
   rare: {
-    frameClassName: "from-card-rare to-card-rare-dark",
-    accentTextClassName: "text-card-rare",
-    accentBorderClassName: "border-card-rare",
-    glowClassName: "drop-shadow-[0_0_40px_rgba(255,177,94,0.3)]",
-    hasCutCorners: false,
+    blobClassNames: ["bg-orange-400", "bg-rose-500", "bg-amber-300"],
+    barClassName: "from-orange-400 to-rose-400",
+    accentTextClassName: "text-orange-200",
+    glowClassName: "drop-shadow-[0_20px_50px_rgba(255,140,80,0.4)]",
+    rimClassName: "glass-rim",
   },
   epic: {
-    frameClassName: "from-card-epic to-card-epic-dark",
-    accentTextClassName: "text-card-epic",
-    accentBorderClassName: "border-card-epic",
-    glowClassName: "drop-shadow-[0_0_40px_rgba(214,140,255,0.35)]",
-    hasCutCorners: false,
+    blobClassNames: ["bg-violet-500", "bg-blue-500", "bg-fuchsia-400"],
+    barClassName: "from-violet-400 to-blue-400",
+    accentTextClassName: "text-violet-200",
+    glowClassName: "drop-shadow-[0_20px_50px_rgba(178,107,255,0.45)]",
+    rimClassName: "glass-rim",
   },
   legendary: {
-    frameClassName: "from-cyan-300 via-fuchsia-400 to-amber-300",
-    accentTextClassName: "text-cyan-200",
-    accentBorderClassName: "border-cyan-200",
-    glowClassName: "drop-shadow-[0_0_40px_rgba(103,232,249,0.4)]",
-    hasCutCorners: true,
+    blobClassNames: ["bg-cyan-400", "bg-fuchsia-400", "bg-amber-300"],
+    barClassName: "from-cyan-300 via-fuchsia-400 to-amber-300",
+    accentTextClassName: "text-cyan-100",
+    glowClassName: "drop-shadow-[0_20px_60px_rgba(103,232,249,0.5)]",
+    rimClassName: "glass-rim-iridescent",
   },
   champion: {
-    frameClassName: "from-card-gold to-card-gold-dark",
-    accentTextClassName: "text-card-gold",
-    accentBorderClassName: "border-card-gold",
-    glowClassName: "drop-shadow-[0_0_48px_rgba(230,198,92,0.5)]",
-    hasCutCorners: true,
+    blobClassNames: ["bg-amber-400", "bg-orange-500", "bg-yellow-200"],
+    barClassName: "from-amber-300 to-orange-400",
+    accentTextClassName: "text-amber-100",
+    glowClassName: "drop-shadow-[0_20px_60px_rgba(245,197,66,0.55)]",
+    rimClassName: "glass-rim-iridescent",
   },
 };
 
@@ -74,9 +69,6 @@ export function TokenCard({
   ref,
 }: TokenCardProps) {
   const style = styleByRarity[rarity];
-  const badgePositionClassName = style.hasCutCorners
-    ? "top-9 left-7"
-    : "top-6 left-4";
   const agents = Object.entries(tokensByAgent).sort(
     (left, right) => right[1] - left[1],
   );
@@ -88,34 +80,35 @@ export function TokenCard({
       aria-label={`${login}: ${formatTokens(totalTokens)} tokens, ${rarity}`}
       className={`relative h-[520px] w-[300px] shrink-0 ${style.glowClassName}`}
     >
-      <div
-        className={`absolute inset-0 rounded-2xl bg-gradient-to-b ring-2 ring-black/60 ${style.frameClassName}`}
-        style={{
-          clipPath: style.hasCutCorners ? cutCornersOutline(32) : undefined,
-        }}
-      />
-      <div
-        className="absolute inset-[5px] flex flex-col overflow-hidden rounded-xl bg-gradient-to-b from-pitch-blue to-pitch-night"
-        style={{
-          clipPath: style.hasCutCorners ? cutCornersOutline(30) : undefined,
-        }}
-      >
-        <div className="relative h-[270px] shrink-0">
+      <div className="absolute inset-0 overflow-hidden rounded-[36px] bg-night">
+        <div
+          className={`absolute -top-16 -left-16 size-56 rounded-full opacity-80 blur-3xl ${style.blobClassNames[0]}`}
+        />
+        <div
+          className={`absolute top-1/3 -right-20 size-56 rounded-full opacity-70 blur-3xl ${style.blobClassNames[1]}`}
+        />
+        <div
+          className={`absolute -bottom-20 left-10 size-52 rounded-full opacity-60 blur-3xl ${style.blobClassNames[2]}`}
+        />
+      </div>
+      <div className="absolute inset-0 flex flex-col gap-2.5 rounded-[36px] p-2.5">
+        <div className="relative h-[236px] shrink-0 overflow-hidden rounded-[28px] shadow-[inset_0_1px_0_rgb(255_255_255/0.5)]">
           <img
             src={`https://avatars.githubusercontent.com/${login}?size=400`}
             alt=""
             crossOrigin="anonymous"
             className="h-full w-full object-cover"
           />
-          <div className="absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-pitch-night to-transparent" />
-          <div
-            className={`absolute inset-x-5 bottom-3 border-y bg-pitch-night/80 py-1 text-center font-display uppercase ${style.accentBorderClassName}`}
-          >
-            <p className="truncate font-bold text-3xl text-white tracking-wide">
+          <div className="absolute inset-0 bg-gradient-to-b from-white/15 via-transparent to-night/70" />
+          <div className="glass absolute top-3 left-3 rounded-full px-3 py-1 font-bold text-sm text-white">
+            {formatTokens(totalTokens)}
+          </div>
+          <div className="glass absolute inset-x-3 bottom-3 rounded-[20px] px-4 py-2 text-center">
+            <p className="truncate font-bold text-2xl text-white tracking-tight">
               {login}
             </p>
             <p
-              className={`text-xs tracking-[0.3em] ${style.accentTextClassName}`}
+              className={`font-semibold text-[11px] uppercase tracking-[0.3em] ${style.accentTextClassName}`}
             >
               {rarity}
             </p>
@@ -123,10 +116,10 @@ export function TokenCard({
         </div>
         <section
           aria-label="Estimated tokens by agent"
-          className="flex-1 px-7 pt-3 pb-8"
+          className="glass flex-1 rounded-[28px] px-5 pt-4 pb-3"
         >
           <h2
-            className={`font-display text-xs uppercase tracking-[0.3em] ${style.accentTextClassName}`}
+            className={`font-semibold text-[11px] uppercase tracking-[0.25em] ${style.accentTextClassName}`}
           >
             Tokens by agent
           </h2>
@@ -135,11 +128,11 @@ export function TokenCard({
               No attributed agent tokens found.
             </p>
           ) : (
-            <ul className="mt-3 space-y-2.5">
+            <ul className="mt-3 space-y-2">
               {agents.slice(0, maxAgentRows).map(([agent, tokens]) => (
                 <li key={agent}>
                   <div className="mb-1 flex justify-between gap-3 text-sm">
-                    <span className="flex items-center gap-2">
+                    <span className="flex items-center gap-2 font-medium">
                       {agentMarks[agent] ? (
                         <svg
                           viewBox="0 0 24 24"
@@ -151,10 +144,10 @@ export function TokenCard({
                       ) : null}
                       {nameByAgent[agent] ?? agent}
                     </span>
-                    <span className="font-mono">
+                    <span className="font-mono text-xs leading-5">
                       {formatTokens(tokens)}{" "}
                       <span className="text-muted">
-                        ({Math.round((tokens / agentTotal) * 100)}%)
+                        {Math.round((tokens / agentTotal) * 100)}%
                       </span>
                     </span>
                   </div>
@@ -163,7 +156,7 @@ export function TokenCard({
                     aria-hidden="true"
                   >
                     <div
-                      className="h-full rounded-full bg-scout-green"
+                      className={`h-full rounded-full bg-gradient-to-r shadow-[0_0_10px_rgb(255_255_255/0.4)] ${style.barClassName}`}
                       style={{ width: `${(tokens / agentTotal) * 100}%` }}
                     />
                   </div>
@@ -177,19 +170,13 @@ export function TokenCard({
             </p>
           )}
         </section>
+        <p className="text-center font-semibold text-[10px] text-white/50 tracking-[0.35em]">
+          GITTOKEN
+        </p>
       </div>
       <div
-        className={`absolute flex size-[64px] -rotate-45 items-center justify-center rounded-[50%_0_50%_50%] border-2 bg-pitch-night shadow-lg ${style.accentBorderClassName} ${badgePositionClassName}`}
-      >
-        <span
-          className={`rotate-45 font-bold font-display text-sm ${style.accentTextClassName}`}
-        >
-          {formatTokens(totalTokens)}
-        </span>
-      </div>
-      <p className="absolute right-0 bottom-2 left-0 text-center font-display text-[10px] text-white/50 tracking-[0.3em]">
-        GITTOKEN
-      </p>
+        className={`pointer-events-none absolute inset-0 rounded-[36px] ${style.rimClassName}`}
+      />
     </article>
   );
 }
