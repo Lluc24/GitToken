@@ -11,7 +11,7 @@ from pydantic import BaseModel, SecretStr
 from pydantic_settings import BaseSettings
 from sentry_sdk.integrations.loguru import LoguruIntegration
 
-from gittoken.badge import render_badge
+from gittoken.badge import render_badge, render_profile_card
 from gittoken.db import LeaderboardEntry, fetch_cached_profile, fetch_leaderboard, save_profile
 from gittoken.domain import (
     MIN_TOKENS_BY_RARITY,
@@ -22,7 +22,7 @@ from gittoken.domain import (
     Rarity,
     VerifiedGithubUsername,
 )
-from gittoken.github import fetch_github_profile
+from gittoken.github import fetch_avatar, fetch_github_profile
 from gittoken.telemetry import configure_tracing, tracer
 
 _GITHUB_LOGIN_PATTERN = "^[A-Za-z0-9][A-Za-z0-9-]{0,38}$"
@@ -146,6 +146,34 @@ def create_app() -> FastAPI:
                 profile.total_tokens,
                 profile.tokens_by_agent,
                 profile.rarity,
+            ),
+            media_type="image/svg+xml",
+            headers={
+                "Cache-Control": "public, max-age=0, s-maxage=3600, stale-while-revalidate=3600",
+                "X-Content-Type-Options": "nosniff",
+            },
+        )
+
+    @app.get("/v1/badges/{login}/profile.svg")
+    async def get_profile_card(
+        login: Annotated[VerifiedGithubUsername, Path(pattern=_GITHUB_LOGIN_PATTERN)],
+    ) -> Response:
+        profile = await get_user_tokens(login, Response())
+        try:
+            avatar = await fetch_avatar(login)
+        except (httpx.HTTPError, GithubRequestError) as error:
+            raise HTTPException(
+                status.HTTP_502_BAD_GATEWAY,
+                "Avatar unavailable",
+                headers={"Cache-Control": "no-store"},
+            ) from error
+        return Response(
+            render_profile_card(
+                profile.login,
+                profile.total_tokens,
+                profile.tokens_by_agent,
+                profile.rarity,
+                avatar,
             ),
             media_type="image/svg+xml",
             headers={

@@ -1,20 +1,19 @@
-import { toPng } from "html-to-image";
-import { type RefObject, useState } from "react";
+import { useState } from "react";
+import { Link } from "react-router-dom";
+import { profileCardPath } from "./badges";
 import { formatTokens } from "./format";
 import { glassClassName, pressableClassName } from "./glass";
 
 type ShareCardProps = {
   login: string;
   totalTokens: number;
-  cardRef: RefObject<HTMLElement | null>;
 };
 
 const buttonClassName = `rounded-full px-4 py-2 font-medium text-sm text-white ${glassClassName} ${pressableClassName}`;
 
-export function ShareCard({ login, totalTokens, cardRef }: ShareCardProps) {
+export function ShareCard({ login, totalTokens }: ShareCardProps) {
   const [status, setStatus] = useState("");
   const profileUrl = `${window.location.origin}/${encodeURIComponent(login)}`;
-  const badgeUrl = `${window.location.origin}/v1/badges/${encodeURIComponent(login)}.svg`;
   const postText = `${login} spent an estimated ${formatTokens(totalTokens)} tokens through coding agents. What's your GitToken card?`;
   const postUrl = `https://x.com/intent/post?${new URLSearchParams({ text: postText, url: profileUrl })}`;
 
@@ -24,9 +23,17 @@ export function ShareCard({ login, totalTokens, cardRef }: ShareCardProps) {
   }
 
   async function downloadPng() {
-    if (cardRef.current) {
+    const card = new Image();
+    card.src = profileCardPath(login);
+    await card.decode();
+    const canvas = document.createElement("canvas");
+    canvas.width = card.naturalWidth * 2;
+    canvas.height = card.naturalHeight * 2;
+    const context = canvas.getContext("2d");
+    if (context) {
+      context.drawImage(card, 0, 0, canvas.width, canvas.height);
       const link = document.createElement("a");
-      link.href = await toPng(cardRef.current, { pixelRatio: 2 });
+      link.href = canvas.toDataURL("image/png");
       link.download = `${login}-gittoken.png`;
       link.click();
       setStatus("Card downloaded");
@@ -57,18 +64,12 @@ export function ShareCard({ login, totalTokens, cardRef }: ShareCardProps) {
         >
           Share on X
         </a>
-        <button
-          type="button"
-          onClick={() =>
-            copy(
-              `[![${login}'s GitToken card](${badgeUrl})](${profileUrl})`,
-              "README embed copied",
-            )
-          }
+        <Link
+          to={`/${encodeURIComponent(login)}/badges`}
           className={buttonClassName}
         >
-          Copy README embed
-        </button>
+          README badges
+        </Link>
       </div>
       <p role="status" className="min-h-5 text-muted text-sm">
         {status}

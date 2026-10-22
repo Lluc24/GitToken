@@ -1,4 +1,3 @@
-import { type FormEvent, useRef, useState } from "react";
 import {
   BrowserRouter,
   Link,
@@ -7,18 +6,19 @@ import {
   useNavigate,
   useParams,
 } from "react-router-dom";
-import { useNameByAgent, useProfileTokens } from "./api";
+import { useProfileTokens } from "./api";
+import { BadgesPage } from "./BadgesPage";
+import { profileCardPath } from "./badges";
+import { formatTokens } from "./format";
 import { glassClassName, pressableClassName } from "./glass";
 import { Leaderboard } from "./Leaderboard";
+import { LoginForm } from "./LoginForm";
 import { ShareCard } from "./ShareCard";
-import { TokenCard } from "./TokenCard";
 
 function ProfileTokensResult({ login }: { login: string }) {
   const profileTokens = useProfileTokens(login);
-  const nameByAgent = useNameByAgent();
-  const cardRef = useRef<HTMLElement>(null);
 
-  if (profileTokens.isPending || nameByAgent.isPending) {
+  if (profileTokens.isPending) {
     return (
       <p
         className={`animate-pulse rounded-full px-5 py-2 text-muted ${glassClassName}`}
@@ -37,71 +37,36 @@ function ProfileTokensResult({ login }: { login: string }) {
       </p>
     );
   }
-  if (nameByAgent.isError) {
-    return (
-      <p
-        role="alert"
-        className={`rounded-3xl px-5 py-3 text-rose-200 ${glassClassName}`}
-      >
-        {nameByAgent.error.message}
-      </p>
-    );
-  }
+  const { data } = profileTokens;
   return (
     <section className="flex flex-col items-center gap-6">
-      <TokenCard
-        ref={cardRef}
-        login={profileTokens.data.login}
-        totalTokens={profileTokens.data.totalTokens}
-        rarity={profileTokens.data.rarity}
-        tokensByAgent={profileTokens.data.tokensByAgent}
-        nameByAgent={nameByAgent.data}
+      <img
+        src={profileCardPath(data.login)}
+        alt={`${data.login}: ${formatTokens(data.totalTokens)} estimated tokens, ${data.rarity}`}
+        width={300}
+        className="drop-shadow-[0_30px_50px_rgb(0_0_0/0.6)]"
       />
-      <ShareCard
-        login={profileTokens.data.login}
-        totalTokens={profileTokens.data.totalTokens}
-        cardRef={cardRef}
-      />
+      <ShareCard login={data.login} totalTokens={data.totalTokens} />
     </section>
   );
 }
 
 function ProfilePage() {
   const { login: submittedLogin = "" } = useParams();
-  const [typedLogin, setTypedLogin] = useState(submittedLogin);
   const navigate = useNavigate();
-
-  function submitLogin(event: FormEvent) {
-    event.preventDefault();
-    const login = typedLogin.trim();
-    navigate(login === "" ? "/" : `/${encodeURIComponent(login)}`);
-  }
 
   return (
     <main className="mx-auto flex max-w-xl flex-col items-center gap-8 px-4 py-12">
       <h1 className="bg-gradient-to-br from-white via-white to-white/40 bg-clip-text font-extrabold text-6xl text-transparent tracking-tighter sm:text-7xl">
         GitToken
       </h1>
-      <form
-        onSubmit={submitLogin}
-        className={`flex w-full items-center gap-2 rounded-full p-1.5 pl-6 focus-within:ring-2 focus-within:ring-white/40 ${glassClassName}`}
-      >
-        <label className="flex flex-1 flex-col">
-          <span className="sr-only">GitHub username</span>
-          <input
-            value={typedLogin}
-            onChange={(event) => setTypedLogin(event.target.value)}
-            placeholder="GitHub username"
-            className="w-full bg-transparent py-2 text-lg text-white outline-none placeholder:text-white/40"
-          />
-        </label>
-        <button
-          type="submit"
-          className={`rounded-full bg-gradient-to-br from-cyan-300 via-violet-400 to-fuchsia-400 px-6 py-3 font-semibold text-night shadow-[inset_0_1px_0_rgb(255_255_255/0.7),0_8px_30px_-6px_rgb(167_139_250/0.8)] ${pressableClassName}`}
-        >
-          Estimate
-        </button>
-      </form>
+      <LoginForm
+        initialLogin={submittedLogin}
+        submitLabel="Estimate"
+        onSubmitLogin={(login) =>
+          navigate(login === "" ? "/" : `/${encodeURIComponent(login)}`)
+        }
+      />
       {submittedLogin !== "" && <ProfileTokensResult login={submittedLogin} />}
     </main>
   );
@@ -155,6 +120,12 @@ export function App() {
             >
               Leaderboard
             </Link>
+            <Link
+              to="/badges"
+              className={`rounded-full px-4 py-2 text-white/80 hover:bg-white/15 hover:text-white ${pressableClassName}`}
+            >
+              Badges
+            </Link>
             <a
               href="https://github.com/Lluc24/GitToken"
               className={`rounded-full px-4 py-2 text-white/80 hover:bg-white/15 hover:text-white ${pressableClassName}`}
@@ -166,6 +137,8 @@ export function App() {
         <Routes>
           <Route path="/" element={<ProfilePage />} />
           <Route path="/:login" element={<ProfilePage />} />
+          <Route path="/badges" element={<BadgesPage />} />
+          <Route path="/:login/badges" element={<BadgesPage />} />
           <Route
             path="/leaderboard"
             element={

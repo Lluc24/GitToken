@@ -7,14 +7,7 @@
 {% set track = width - 2 * padding - 8 %}
 {% set font = "-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif" %}
 {% set mono = "'SF Mono', ui-monospace, Menlo, monospace" %}
-{# accent, then the rim and bar gradient stops #}
-{% set colors = {
-  "common": ("#7dd3fc", "#e0f2fe", "#38bdf8", "#3b82f6"),
-  "rare": ("#fdba74", "#fde68a", "#fb923c", "#f43f5e"),
-  "epic": ("#c4b5fd", "#f0abfc", "#8b5cf6", "#3b82f6"),
-  "legendary": ("#a5f3fc", "#67e8f9", "#e879f9", "#fcd34d"),
-  "champion": ("#fcd34d", "#fef3c7", "#f59e0b", "#f97316"),
-} %}
+{% from "rarity_colors.jinja" import colors %}
 {% set color = colors[rarity] %}
 {% set aria = login ~ ": " ~ "{:,}".format(total_tokens) ~ " estimated tokens, " ~ rarity %}
 <svg xmlns="http://www.w3.org/2000/svg" width="{{ width }}" height="{{ height }}" viewBox="0 0 {{ width }} {{ height }}" role="img" aria-label="{{ aria }}">
