@@ -4,15 +4,9 @@ import { type Badge, badges } from "./badges";
 import { glassClassName, pressableClassName } from "./glass";
 import { LoginForm } from "./LoginForm";
 
-type Background = "light" | "dark";
 type SnippetFormat = "Markdown" | "HTML" | "URL";
 
 const snippetFormats: SnippetFormat[] = ["Markdown", "HTML", "URL"];
-
-const previewClassNameByBackground: Record<Background, string> = {
-  light: "bg-white shadow-[inset_0_0_0_1px_rgb(0_0_0/0.06)]",
-  dark: "bg-[#0d1117] shadow-[inset_0_0_0_1px_rgb(255_255_255/0.08)]",
-};
 
 function snippet(
   format: SnippetFormat,
@@ -53,7 +47,7 @@ function SegmentedControl<Option extends string>({
           type="button"
           aria-pressed={option === selected}
           onClick={() => onSelect(option)}
-          className={`rounded-full px-3 py-1 capitalize transition-colors ${option === selected ? "bg-white font-medium text-night" : "text-white/70 hover:text-white"}`}
+          className={`rounded-full px-3 py-1 transition-colors ${option === selected ? "bg-white font-medium text-night" : "text-white/70 hover:text-white"}`}
         >
           {option}
         </button>
@@ -63,7 +57,6 @@ function SegmentedControl<Option extends string>({
 }
 
 function BadgeSection({ login, badge }: { login: string; badge: Badge }) {
-  const [background, setBackground] = useState<Background>("light");
   const [format, setFormat] = useState<SnippetFormat>("Markdown");
   const [copiedFormat, setCopiedFormat] = useState<SnippetFormat | null>(null);
   const text = snippet(format, login, badge, window.location.origin);
@@ -78,26 +71,16 @@ function BadgeSection({ login, badge }: { login: string; badge: Badge }) {
       aria-labelledby={`badge-${badge.name}`}
       className={`rounded-[32px] p-5 ${glassClassName}`}
     >
-      <div className="flex flex-wrap items-start justify-between gap-3 px-1">
-        <div>
-          <h2
-            id={`badge-${badge.name}`}
-            className="font-semibold text-xl tracking-tight"
-          >
-            {badge.name}
-          </h2>
-          <p className="text-muted text-sm">{badge.description}</p>
-        </div>
-        <SegmentedControl
-          label="Preview background"
-          options={["light", "dark"]}
-          selected={background}
-          onSelect={setBackground}
-        />
+      <div className="px-1">
+        <h2
+          id={`badge-${badge.name}`}
+          className="font-semibold text-xl tracking-tight"
+        >
+          {badge.name}
+        </h2>
+        <p className="text-muted text-sm">{badge.description}</p>
       </div>
-      <div
-        className={`mt-4 flex justify-center rounded-3xl p-8 ${previewClassNameByBackground[background]}`}
-      >
+      <div className="flex justify-center py-6">
         <img src={badge.path(login)} alt={`${login}'s ${badge.name} badge`} />
       </div>
       <div className="mt-4">
