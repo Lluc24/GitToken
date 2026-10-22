@@ -1,17 +1,21 @@
-import { type FormEvent, useState } from "react";
-import { BrowserRouter, Link, Route, Routes } from "react-router-dom";
-import { AgentTokens } from "./AgentTokens";
+import { type FormEvent, useRef, useState } from "react";
+import {
+  BrowserRouter,
+  Link,
+  Route,
+  Routes,
+  useNavigate,
+  useParams,
+} from "react-router-dom";
 import { useNameByAgent, useProfileTokens } from "./api";
 import { Leaderboard } from "./Leaderboard";
+import { ShareCard } from "./ShareCard";
 import { TokenCard } from "./TokenCard";
-
-function loginFromUrl(): string {
-  return new URLSearchParams(window.location.search).get("login") ?? "";
-}
 
 function ProfileTokensResult({ login }: { login: string }) {
   const profileTokens = useProfileTokens(login);
   const nameByAgent = useNameByAgent();
+  const cardRef = useRef<HTMLElement>(null);
 
   if (profileTokens.isPending || nameByAgent.isPending) {
     return <p>Reading {login}'s commits…</p>;
@@ -25,28 +29,31 @@ function ProfileTokensResult({ login }: { login: string }) {
   return (
     <section className="flex flex-col items-center gap-6">
       <TokenCard
+        ref={cardRef}
         login={profileTokens.data.login}
         totalTokens={profileTokens.data.totalTokens}
         rarity={profileTokens.data.rarity}
-      />
-      <AgentTokens
         tokensByAgent={profileTokens.data.tokensByAgent}
         nameByAgent={nameByAgent.data}
+      />
+      <ShareCard
+        login={profileTokens.data.login}
+        totalTokens={profileTokens.data.totalTokens}
+        cardRef={cardRef}
       />
     </section>
   );
 }
 
 function ProfilePage() {
-  const [typedLogin, setTypedLogin] = useState(loginFromUrl);
-  const [submittedLogin, setSubmittedLogin] = useState(loginFromUrl);
+  const { login: submittedLogin = "" } = useParams();
+  const [typedLogin, setTypedLogin] = useState(submittedLogin);
+  const navigate = useNavigate();
 
   function submitLogin(event: FormEvent) {
     event.preventDefault();
     const login = typedLogin.trim();
-    setSubmittedLogin(login);
-    const url = login === "" ? "/" : `/?login=${encodeURIComponent(login)}`;
-    window.history.replaceState(null, "", url);
+    navigate(login === "" ? "/" : `/${encodeURIComponent(login)}`);
   }
 
   return (
@@ -116,6 +123,7 @@ export function App() {
         </header>
         <Routes>
           <Route path="/" element={<ProfilePage />} />
+          <Route path="/:login" element={<ProfilePage />} />
           <Route
             path="/leaderboard"
             element={
