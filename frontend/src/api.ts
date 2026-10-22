@@ -30,7 +30,17 @@ async function fetchProfileTokens(login: string): Promise<ProfileTokens> {
   if (!response.ok) {
     throw new Error(`The GitToken API answered ${response.status}`);
   }
-  const body = profileTokensResponse.parse(await response.json());
+  let rawBody: unknown;
+  try {
+    rawBody = await response.json();
+  } catch {
+    throw new Error("The GitToken API returned an unreadable response");
+  }
+  const parsed = profileTokensResponse.safeParse(rawBody);
+  if (!parsed.success) {
+    throw new Error("The GitToken API returned an unexpected response");
+  }
+  const body = parsed.data;
   return {
     login: body.login,
     totalTokens: body.total_tokens,
