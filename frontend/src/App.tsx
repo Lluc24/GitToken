@@ -1,7 +1,7 @@
 import { type FormEvent, useState } from "react";
 import { BrowserRouter, Link, Route, Routes } from "react-router-dom";
 import { AgentTokens } from "./AgentTokens";
-import { useProfileTokens } from "./api";
+import { useNameByAgent, useProfileTokens } from "./api";
 import { Leaderboard } from "./Leaderboard";
 import { TokenCard } from "./TokenCard";
 
@@ -11,12 +11,16 @@ function loginFromUrl(): string {
 
 function ProfileTokensResult({ login }: { login: string }) {
   const profileTokens = useProfileTokens(login);
+  const nameByAgent = useNameByAgent();
 
-  if (profileTokens.isPending) {
+  if (profileTokens.isPending || nameByAgent.isPending) {
     return <p>Reading {login}'s commits…</p>;
   }
   if (profileTokens.isError) {
     return <p role="alert">{profileTokens.error.message}</p>;
+  }
+  if (nameByAgent.isError) {
+    return <p role="alert">{nameByAgent.error.message}</p>;
   }
   return (
     <section className="flex flex-col items-center gap-6">
@@ -25,7 +29,10 @@ function ProfileTokensResult({ login }: { login: string }) {
         totalTokens={profileTokens.data.totalTokens}
         rarity={profileTokens.data.rarity}
       />
-      <AgentTokens tokensByAgent={profileTokens.data.tokensByAgent} />
+      <AgentTokens
+        tokensByAgent={profileTokens.data.tokensByAgent}
+        nameByAgent={nameByAgent.data}
+      />
     </section>
   );
 }

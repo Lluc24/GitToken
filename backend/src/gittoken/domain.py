@@ -15,6 +15,17 @@ class Agent(StrEnum):
     AIDER = "aider"
 
 
+NAME_BY_AGENT = {
+    Agent.CLAUDE_CODE: "Claude Code",
+    Agent.CODEX: "Codex",
+    Agent.COPILOT: "Copilot",
+    Agent.CURSOR: "Cursor",
+    Agent.DEVIN: "Devin",
+    Agent.JULES: "Jules",
+    Agent.AIDER: "Aider",
+}
+
+
 # Lowercase emails each agent leaves as a commit author or co-author.
 AGENT_BY_EMAIL = {
     "noreply@anthropic.com": Agent.CLAUDE_CODE,
