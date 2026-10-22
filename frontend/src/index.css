@@ -66,22 +66,16 @@
   }
 }
 
-/* A border-only ring: the gradient shows through the padding, the mask cuts out the content box. */
+/* A border-only ring: the background shows through the padding, the mask cuts out the content box. */
 @utility glass-rim {
-  padding: 1.5px;
+  padding: 2px;
   mask:
     linear-gradient(#000 0 0) content-box exclude,
     linear-gradient(#000 0 0);
-  background: linear-gradient(
-    160deg,
-    rgb(255 255 255 / 0.8),
-    rgb(255 255 255 / 0.05) 45%,
-    rgb(255 255 255 / 0.35)
-  );
 }
 
 @utility glass-rim-iridescent {
-  padding: 1.5px;
+  padding: 2px;
   mask:
     linear-gradient(#000 0 0) content-box exclude,
     linear-gradient(#000 0 0);
