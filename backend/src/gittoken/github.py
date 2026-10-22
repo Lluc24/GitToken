@@ -1,4 +1,5 @@
 import asyncio
+from base64 import b64encode
 from itertools import chain
 from json import JSONDecodeError
 from typing import Self
@@ -17,6 +18,7 @@ from gittoken.domain import (
 )
 
 _GRAPHQL_URL = "https://api.github.com/graphql"
+_AVATAR_URL = "https://avatars.githubusercontent.com/{login}?size=300"
 _TIMEOUT_SECONDS = 30
 _MAXIMUM_CONNECTIONS = 8
 # GitHub timestamps are UTC ISO 8601, so they compare correctly as strings.
@@ -253,3 +255,14 @@ async def fetch_github_profile(token: str, login: VerifiedGithubUsername) -> Git
         login,
         agentic_commits,
     )
+
+
+async def fetch_avatar_data_url(login: VerifiedGithubUsername) -> str:
+    """Post: the user's avatar as a base64 data: URL, or GithubRequestError if it is not an image."""
+    async with httpx.AsyncClient(timeout=_TIMEOUT_SECONDS, follow_redirects=True) as http_client:
+        response = await http_client.get(_AVATAR_URL.format(login=login))
+    response.raise_for_status()
+    media_type = response.headers.get("Content-Type", "")
+    if not media_type.startswith("image/"):
+        raise GithubRequestError("GitHub returned an avatar that is not an image")
+    return f"data:{media_type};base64,{b64encode(response.content).decode()}"

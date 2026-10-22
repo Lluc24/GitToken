@@ -16,7 +16,6 @@ export type ProfileTokens = {
   login: string;
   totalTokens: number;
   rarity: Rarity;
-  tokensByAgent: Record<string, number>;
 };
 
 async function fetchProfileTokens(login: string): Promise<ProfileTokens> {
@@ -45,7 +44,6 @@ async function fetchProfileTokens(login: string): Promise<ProfileTokens> {
     login: body.login,
     totalTokens: body.total_tokens,
     rarity: body.rarity,
-    tokensByAgent: body.tokens_by_agent,
   };
 }
 
@@ -73,28 +71,6 @@ export function useLeaderboard() {
   return useQuery({
     queryKey: ["leaderboard"],
     queryFn: fetchLeaderboard,
-    retry: false,
-  });
-}
-
-const agentsResponse = z.array(
-  z.object({ agent: z.string(), name: z.string() }),
-);
-
-async function fetchNameByAgent(): Promise<Record<string, string>> {
-  const response = await fetch("/v1/agents");
-  if (!response.ok) {
-    throw new Error(`The GitToken API answered ${response.status}`);
-  }
-  const body = agentsResponse.parse(await response.json());
-  return Object.fromEntries(body.map(({ agent, name }) => [agent, name]));
-}
-
-export function useNameByAgent() {
-  return useQuery({
-    queryKey: ["agent-names"],
-    queryFn: fetchNameByAgent,
-    staleTime: Number.POSITIVE_INFINITY,
     retry: false,
   });
 }

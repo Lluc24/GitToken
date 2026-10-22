@@ -1,9 +1,8 @@
 import { type FormEvent, useState } from "react";
 import { BrowserRouter, Link, Route, Routes } from "react-router-dom";
-import { AgentTokens } from "./AgentTokens";
-import { useNameByAgent, useProfileTokens } from "./api";
+import { useProfileTokens } from "./api";
+import { formatTokens } from "./format";
 import { Leaderboard } from "./Leaderboard";
-import { TokenCard } from "./TokenCard";
 
 function loginFromUrl(): string {
   return new URLSearchParams(window.location.search).get("login") ?? "";
@@ -11,29 +10,21 @@ function loginFromUrl(): string {
 
 function ProfileTokensResult({ login }: { login: string }) {
   const profileTokens = useProfileTokens(login);
-  const nameByAgent = useNameByAgent();
 
-  if (profileTokens.isPending || nameByAgent.isPending) {
+  if (profileTokens.isPending) {
     return <p>Reading {login}'s commits…</p>;
   }
   if (profileTokens.isError) {
     return <p role="alert">{profileTokens.error.message}</p>;
   }
-  if (nameByAgent.isError) {
-    return <p role="alert">{nameByAgent.error.message}</p>;
-  }
   return (
-    <section className="flex flex-col items-center gap-6">
-      <TokenCard
-        login={profileTokens.data.login}
-        totalTokens={profileTokens.data.totalTokens}
-        rarity={profileTokens.data.rarity}
-      />
-      <AgentTokens
-        tokensByAgent={profileTokens.data.tokensByAgent}
-        nameByAgent={nameByAgent.data}
-      />
-    </section>
+    <img
+      src={`/v1/badges/${encodeURIComponent(profileTokens.data.login)}.svg`}
+      alt={`${profileTokens.data.login}: ${formatTokens(profileTokens.data.totalTokens)} estimated tokens, ${profileTokens.data.rarity}`}
+      width={300}
+      height={520}
+      className="drop-shadow-[0_0_40px_rgba(94,201,90,0.25)]"
+    />
   );
 }
 

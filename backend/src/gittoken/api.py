@@ -22,7 +22,7 @@ from gittoken.domain import (
     Rarity,
     VerifiedGithubUsername,
 )
-from gittoken.github import fetch_github_profile
+from gittoken.github import fetch_avatar_data_url, fetch_github_profile
 from gittoken.telemetry import configure_tracing, tracer
 
 _GITHUB_LOGIN_PATTERN = "^[A-Za-z0-9][A-Za-z0-9-]{0,38}$"
@@ -140,12 +140,21 @@ def create_app() -> FastAPI:
         login: Annotated[VerifiedGithubUsername, Path(pattern=_GITHUB_LOGIN_PATTERN)],
     ) -> Response:
         profile = await get_user_tokens(login, Response())
+        try:
+            avatar_data_url = await fetch_avatar_data_url(login)
+        except (httpx.HTTPError, GithubRequestError) as error:
+            raise HTTPException(
+                status.HTTP_502_BAD_GATEWAY,
+                "Avatar unavailable",
+                headers={"Cache-Control": "no-store"},
+            ) from error
         return Response(
             render_badge(
                 profile.login,
                 profile.total_tokens,
                 profile.tokens_by_agent,
                 profile.rarity,
+                avatar_data_url,
             ),
             media_type="image/svg+xml",
             headers={
