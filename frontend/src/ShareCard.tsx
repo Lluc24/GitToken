@@ -1,6 +1,7 @@
 import { toPng } from "html-to-image";
 import { type RefObject, useState } from "react";
 import { formatTokens } from "./format";
+import { glassClassName, pressableClassName } from "./glass";
 
 type ShareCardProps = {
   login: string;
@@ -8,8 +9,7 @@ type ShareCardProps = {
   cardRef: RefObject<HTMLElement | null>;
 };
 
-const buttonClassName =
-  "glass glass-interactive rounded-full px-4 py-2 font-medium text-sm text-white";
+const buttonClassName = `rounded-full px-4 py-2 font-medium text-sm text-white ${glassClassName} ${pressableClassName}`;
 
 export function ShareCard({ login, totalTokens, cardRef }: ShareCardProps) {
   const [status, setStatus] = useState("");
