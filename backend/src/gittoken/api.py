@@ -110,7 +110,9 @@ def create_app() -> FastAPI:
                 duration_seconds=perf_counter() - started_at,
             ).warning("Profile lookup failed")
             raise HTTPException(
-                status.HTTP_502_BAD_GATEWAY, str(error), headers={"Cache-Control": "no-store"}
+                status.HTTP_502_BAD_GATEWAY,
+                "Profile lookup unavailable",
+                headers={"Cache-Control": "no-store"},
             ) from error
         logger.bind(
             event="profile_lookup",
