@@ -8,6 +8,7 @@ import {
   useParams,
 } from "react-router-dom";
 import { useNameByAgent, useProfileTokens } from "./api";
+import { glassClassName, pressableClassName } from "./glass";
 import { Leaderboard } from "./Leaderboard";
 import { ShareCard } from "./ShareCard";
 import { TokenCard } from "./TokenCard";
@@ -19,21 +20,29 @@ function ProfileTokensResult({ login }: { login: string }) {
 
   if (profileTokens.isPending || nameByAgent.isPending) {
     return (
-      <p className="glass animate-pulse rounded-full px-5 py-2 text-muted">
+      <p
+        className={`animate-pulse rounded-full px-5 py-2 text-muted ${glassClassName}`}
+      >
         Reading {login}'s commits…
       </p>
     );
   }
   if (profileTokens.isError) {
     return (
-      <p role="alert" className="glass rounded-3xl px-5 py-3 text-rose-200">
+      <p
+        role="alert"
+        className={`rounded-3xl px-5 py-3 text-rose-200 ${glassClassName}`}
+      >
         {profileTokens.error.message}
       </p>
     );
   }
   if (nameByAgent.isError) {
     return (
-      <p role="alert" className="glass rounded-3xl px-5 py-3 text-rose-200">
+      <p
+        role="alert"
+        className={`rounded-3xl px-5 py-3 text-rose-200 ${glassClassName}`}
+      >
         {nameByAgent.error.message}
       </p>
     );
@@ -75,7 +84,7 @@ function ProfilePage() {
       </h1>
       <form
         onSubmit={submitLogin}
-        className="glass flex w-full items-center gap-2 rounded-full p-1.5 pl-6 focus-within:ring-2 focus-within:ring-white/40"
+        className={`flex w-full items-center gap-2 rounded-full p-1.5 pl-6 focus-within:ring-2 focus-within:ring-white/40 ${glassClassName}`}
       >
         <label className="flex flex-1 flex-col">
           <span className="sr-only">GitHub username</span>
@@ -88,7 +97,7 @@ function ProfilePage() {
         </label>
         <button
           type="submit"
-          className="glass-interactive rounded-full bg-gradient-to-br from-cyan-300 via-violet-400 to-fuchsia-400 px-6 py-3 font-semibold text-night shadow-[inset_0_1px_0_rgb(255_255_255/0.7),0_8px_30px_-6px_rgb(167_139_250/0.8)]"
+          className={`rounded-full bg-gradient-to-br from-cyan-300 via-violet-400 to-fuchsia-400 px-6 py-3 font-semibold text-night shadow-[inset_0_1px_0_rgb(255_255_255/0.7),0_8px_30px_-6px_rgb(167_139_250/0.8)] ${pressableClassName}`}
         >
           Estimate
         </button>
@@ -103,11 +112,13 @@ export function App() {
     <BrowserRouter>
       <div className="relative min-h-screen overflow-hidden">
         <div aria-hidden="true" className="fixed inset-0 -z-10">
-          <div className="aurora-blob top-[-10%] left-[-10%] size-[55vmax] bg-cyan-500" />
-          <div className="aurora-blob top-[20%] right-[-15%] size-[50vmax] bg-violet-600 [animation-delay:-6s]" />
-          <div className="aurora-blob bottom-[-20%] left-[20%] size-[45vmax] bg-fuchsia-500 [animation-delay:-12s]" />
+          <div className="absolute animate-drift rounded-full opacity-55 blur-[90px] motion-reduce:animate-none top-[-10%] left-[-10%] size-[55vmax] bg-cyan-500" />
+          <div className="absolute animate-drift rounded-full opacity-55 blur-[90px] motion-reduce:animate-none top-[20%] right-[-15%] size-[50vmax] bg-violet-600 [animation-delay:-6s]" />
+          <div className="absolute animate-drift rounded-full opacity-55 blur-[90px] motion-reduce:animate-none bottom-[-20%] left-[20%] size-[45vmax] bg-fuchsia-500 [animation-delay:-12s]" />
         </div>
-        <header className="glass sticky top-4 z-10 mx-auto mt-4 flex w-[calc(100%-2rem)] max-w-3xl items-center justify-between rounded-full py-2 pr-2 pl-4">
+        <header
+          className={`sticky top-4 z-10 mx-auto mt-4 flex w-[calc(100%-2rem)] max-w-3xl items-center justify-between rounded-full py-2 pr-2 pl-4 ${glassClassName}`}
+        >
           <Link
             to="/"
             className="flex items-center gap-2.5 font-bold text-lg tracking-tight"
@@ -140,13 +151,13 @@ export function App() {
           <nav className="flex items-center gap-1 text-sm">
             <Link
               to="/leaderboard"
-              className="glass-interactive rounded-full px-4 py-2 text-white/80 hover:text-white"
+              className={`rounded-full px-4 py-2 text-white/80 hover:bg-white/15 hover:text-white ${pressableClassName}`}
             >
               Leaderboard
             </Link>
             <a
               href="https://github.com/Lluc24/GitToken"
-              className="glass-interactive rounded-full px-4 py-2 text-white/80 hover:text-white"
+              className={`rounded-full px-4 py-2 text-white/80 hover:bg-white/15 hover:text-white ${pressableClassName}`}
             >
               GitHub
             </a>

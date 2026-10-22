@@ -1,5 +1,6 @@
 import { useLeaderboard } from "./api";
 import { formatTokens } from "./format";
+import { glassClassName } from "./glass";
 
 const medalClassNames = [
   "bg-gradient-to-br from-amber-200 to-amber-500 text-night",
@@ -10,7 +11,7 @@ const medalClassNames = [
 export function Leaderboard() {
   const result = useLeaderboard();
   return (
-    <section className="glass w-full rounded-[32px] p-6">
+    <section className={`w-full rounded-[32px] p-6 ${glassClassName}`}>
       <h1 className="font-bold text-3xl tracking-tight">Leaderboard</h1>
       <p className="mt-2 text-muted text-sm">
         Profiles scanned in the last day. Estimated tokens, not a global

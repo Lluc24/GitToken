@@ -5,6 +5,10 @@ import { formatTokens } from "./format";
 
 const maxAgentRows = 2;
 
+// A rectangle twice the card's size, so its rotation always covers the 2px frame.
+const iridescentRimClassName =
+  "before:absolute before:-inset-1/2 before:animate-spin before:bg-[conic-gradient(#67e8f9,#e879f9,#fcd34d,#86efac,#67e8f9)] before:[animation-duration:6s] motion-reduce:before:animate-none";
+
 type RarityStyle = {
   tintClassName: string;
   barClassName: string;
@@ -17,34 +21,33 @@ const styleByRarity: Record<Rarity, RarityStyle> = {
     tintClassName: "from-sky-400/20",
     barClassName: "from-blue-400 to-sky-300",
     accentTextClassName: "text-sky-300",
-    rimClassName:
-      "glass-rim bg-gradient-to-br from-sky-200 via-sky-400/40 to-blue-500",
+    rimClassName: "bg-linear-to-br from-sky-200 via-sky-400/40 to-blue-500",
   },
   rare: {
     tintClassName: "from-orange-400/20",
     barClassName: "from-orange-400 to-rose-400",
     accentTextClassName: "text-orange-300",
     rimClassName:
-      "glass-rim bg-gradient-to-br from-amber-200 via-orange-400/40 to-rose-500",
+      "bg-linear-to-br from-amber-200 via-orange-400/40 to-rose-500",
   },
   epic: {
     tintClassName: "from-violet-500/25",
     barClassName: "from-violet-400 to-blue-400",
     accentTextClassName: "text-violet-300",
     rimClassName:
-      "glass-rim bg-gradient-to-br from-fuchsia-300 via-violet-500/40 to-blue-500",
+      "bg-linear-to-br from-fuchsia-300 via-violet-500/40 to-blue-500",
   },
   legendary: {
     tintClassName: "from-cyan-400/20",
     barClassName: "from-cyan-300 via-fuchsia-400 to-amber-300",
     accentTextClassName: "text-cyan-200",
-    rimClassName: "glass-rim-iridescent",
+    rimClassName: iridescentRimClassName,
   },
   champion: {
     tintClassName: "from-amber-400/25",
     barClassName: "from-amber-300 to-orange-400",
     accentTextClassName: "text-amber-300",
-    rimClassName: "glass-rim-iridescent",
+    rimClassName: iridescentRimClassName,
   },
 };
 
@@ -98,12 +101,11 @@ export function TokenCard({
     <article
       ref={ref}
       aria-label={`${login}: ${formatTokens(totalTokens)} tokens, ${rarity}`}
-      className="relative w-[300px] shrink-0 overflow-hidden rounded-[36px] bg-[#0b0e1a] shadow-[0_30px_80px_-30px_rgb(0_0_0/0.9)]"
+      className={`relative w-[300px] shrink-0 overflow-hidden rounded-[36px] p-[2px] shadow-[0_30px_80px_-30px_rgb(0_0_0/0.9)] ${style.rimClassName}`}
     >
       <div
-        className={`absolute inset-0 bg-gradient-to-b to-transparent to-60% ${style.tintClassName}`}
-      />
-      <div className="relative flex flex-col gap-3 p-2.5 pb-3">
+        className={`relative flex flex-col gap-3 rounded-[34px] bg-[#0b0e1a] bg-linear-to-b to-transparent to-60% p-2.5 pb-3 ${style.tintClassName}`}
+      >
         <img
           src={`https://avatars.githubusercontent.com/${login}?size=400`}
           alt=""
@@ -171,9 +173,6 @@ export function TokenCard({
           GITTOKEN
         </p>
       </div>
-      <div
-        className={`pointer-events-none absolute inset-0 rounded-[36px] ${style.rimClassName}`}
-      />
     </article>
   );
 }
