@@ -44,7 +44,7 @@ query($repositoryId: ID!, $since: GitTimestamp!, $cursor: String) {
           ... on Commit {
             history(first: 100, since: $since, after: $cursor) {
               pageInfo { hasNextPage endCursor }
-              nodes { additions authors(first: 10) { nodes { email } } }
+              nodes { additions authors(first: 100) { pageInfo { hasNextPage endCursor } nodes { email } } }
             }
           }
         }
@@ -99,7 +99,14 @@ class _Author(BaseModel):
 
 
 class _Authors(BaseModel):
+    page_info: _PageInfo = Field(alias="pageInfo")
     nodes: list[_Author]
+
+    @model_validator(mode="after")
+    def validate_complete_authors(self) -> Self:
+        if self.page_info.has_next_page:
+            raise ValueError("a commit requires its complete author list")
+        return self
 
 
 class _Commit(BaseModel):
