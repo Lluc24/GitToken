@@ -1,5 +1,6 @@
 import asyncio
 from itertools import chain
+from json import JSONDecodeError
 from typing import Self
 
 import httpx
@@ -134,7 +135,7 @@ async def _query(
     response.raise_for_status()
     try:
         result = _GraphqlResponse.model_validate(response.json())
-    except ValidationError as error:
+    except (JSONDecodeError, ValidationError) as error:
         raise GithubRequestError("GitHub returned an invalid GraphQL response") from error
     if result.errors or result.data is None:
         raise GithubRequestError("GitHub could not complete the profile lookup")
