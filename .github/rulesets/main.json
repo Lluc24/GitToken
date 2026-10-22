@@ -29,7 +29,8 @@
         "strict_required_status_checks_policy": true,
         "required_status_checks": [
           { "context": "python" },
-          { "context": "pr-title" }
+          { "context": "pr-title" },
+          { "context": "frontend" }
         ]
       }
     }
