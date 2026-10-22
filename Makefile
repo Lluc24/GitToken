@@ -11,6 +11,7 @@ check:
 	uv run mypy backend/src
 	uv run mypy infra
 	cd frontend && pnpm check
+	cd frontend && pnpm build
 
 fix:
 	uv run ruff format

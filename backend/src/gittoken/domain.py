@@ -108,12 +108,20 @@ class GithubProfile:
         return sum(agentic_commit.tokens for agentic_commit in self.agentic_commits)
 
     @property
+    def lines_added_by_agent(self) -> dict[Agent, int]:
+        """Post: agents with at least one commit, largest first."""
+        lines_added: Counter[Agent] = Counter()
+        for agentic_commit in self.agentic_commits:
+            lines_added[agentic_commit.agent] += agentic_commit.lines_added
+        return dict(lines_added.most_common())
+
+    @property
     def tokens_by_agent(self) -> dict[Agent, int]:
         """Post: agents with at least one commit, largest first."""
-        tokens_by_agent: Counter[Agent] = Counter()
-        for agentic_commit in self.agentic_commits:
-            tokens_by_agent[agentic_commit.agent] += agentic_commit.tokens
-        return dict(tokens_by_agent.most_common())
+        return {
+            agent: added_lines * TOKENS_PER_ADDED_LINE
+            for agent, added_lines in self.lines_added_by_agent.items()
+        }
 
     @property
     def rarity(self) -> Rarity:

@@ -1,9 +1,10 @@
 import asyncio
 from itertools import chain
+from json import JSONDecodeError
 from typing import Self
 
 import httpx
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, ValidationError, model_validator
 
 from gittoken.domain import (
     AgenticCommit,
@@ -43,7 +44,7 @@ query($repositoryId: ID!, $since: GitTimestamp!, $cursor: String) {
           ... on Commit {
             history(first: 100, since: $since, after: $cursor) {
               pageInfo { hasNextPage endCursor }
-              nodes { additions authors(first: 10) { nodes { email } } }
+              nodes { additions authors(first: 100) { pageInfo { hasNextPage endCursor } nodes { email } } }
             }
           }
         }
@@ -98,11 +99,18 @@ class _Author(BaseModel):
 
 
 class _Authors(BaseModel):
+    page_info: _PageInfo = Field(alias="pageInfo")
     nodes: list[_Author]
+
+    @model_validator(mode="after")
+    def validate_complete_authors(self) -> Self:
+        if self.page_info.has_next_page:
+            raise ValueError("a commit requires its complete author list")
+        return self
 
 
 class _Commit(BaseModel):
-    additions: int
+    additions: int = Field(strict=True, ge=0)
     authors: _Authors
 
 
@@ -132,7 +140,10 @@ async def _query(
 ) -> object:
     response = await http_client.post(_GRAPHQL_URL, json={"query": query, "variables": variables})
     response.raise_for_status()
-    result = _GraphqlResponse.model_validate(response.json())
+    try:
+        result = _GraphqlResponse.model_validate(response.json())
+    except (JSONDecodeError, ValidationError) as error:
+        raise GithubRequestError("GitHub returned an invalid GraphQL response") from error
     if result.errors or result.data is None:
         raise GithubRequestError("GitHub could not complete the profile lookup")
     return result.data
@@ -143,9 +154,13 @@ async def _fetch_repository_agentic_commits(
 ) -> list[AgenticCommit]:
     agentic_commits: list[AgenticCommit] = []
     cursor: str | None = None
+    seen_cursors: set[str] = set()
     while True:
         variables = {"repositoryId": repository_id, "since": _COMMITS_SINCE, "cursor": cursor}
-        data = _CommitsData.model_validate(await _query(http_client, _COMMITS_QUERY, variables))
+        try:
+            data = _CommitsData.model_validate(await _query(http_client, _COMMITS_QUERY, variables))
+        except ValidationError as error:
+            raise GithubRequestError("GitHub returned invalid commit data") from error
         if data.node.default_branch is None:
             return agentic_commits
         history = data.node.default_branch.target.history
@@ -155,9 +170,11 @@ async def _fetch_repository_agentic_commits(
                 agentic_commits.append(AgenticCommit(agent, commit.additions))
         if not history.page_info.has_next_page:
             return agentic_commits
-        if history.page_info.end_cursor == cursor:
-            raise GithubRequestError("GitHub repeated a commit pagination cursor")
-        cursor = history.page_info.end_cursor
+        next_cursor = history.page_info.end_cursor
+        if next_cursor is None or next_cursor in seen_cursors:
+            raise GithubRequestError("GitHub returned an invalid commit pagination cursor")
+        seen_cursors.add(next_cursor)
+        cursor = next_cursor
 
 
 async def _fetch_repositories(
@@ -165,10 +182,14 @@ async def _fetch_repositories(
 ) -> _User:
     repositories: list[_Repository] = []
     cursor: str | None = None
+    seen_cursors: set[str] = set()
     while True:
-        data = _UserData.model_validate(
-            await _query(http_client, _REPOSITORIES_QUERY, {"login": login, "cursor": cursor})
-        )
+        try:
+            data = _UserData.model_validate(
+                await _query(http_client, _REPOSITORIES_QUERY, {"login": login, "cursor": cursor})
+            )
+        except ValidationError as error:
+            raise GithubRequestError("GitHub returned invalid repository data") from error
         if data.user is None:
             raise ProfileNotFoundError(f"no GitHub user named {login!r}")
         page = data.user.repositories
@@ -185,9 +206,36 @@ async def _fetch_repositories(
                 databaseId=data.user.database_id,
                 repositories=_Repositories(pageInfo=page.page_info, nodes=repositories),
             )
-        if page.page_info.end_cursor == cursor:
-            raise GithubRequestError("GitHub repeated a repository pagination cursor")
-        cursor = page.page_info.end_cursor
+        next_cursor = page.page_info.end_cursor
+        if next_cursor is None or next_cursor in seen_cursors:
+            raise GithubRequestError("GitHub returned an invalid repository pagination cursor")
+        seen_cursors.add(next_cursor)
+        cursor = next_cursor
+
+
+async def _fetch_agentic_commits(
+    http_client: httpx.AsyncClient, repositories: list[_Repository]
+) -> tuple[AgenticCommit, ...]:
+    pending_repositories = iter(enumerate(repositories))
+    commits_by_repository: list[list[AgenticCommit]] = [[] for _ in repositories]
+
+    async def fetch_next_repositories() -> None:
+        for index, repository in pending_repositories:
+            commits_by_repository[index] = await _fetch_repository_agentic_commits(
+                http_client, repository.id
+            )
+
+    workers = [
+        asyncio.create_task(fetch_next_repositories())
+        for _ in range(min(_MAXIMUM_CONNECTIONS, len(repositories)))
+    ]
+    try:
+        await asyncio.gather(*workers)
+        return tuple(chain.from_iterable(commits_by_repository))
+    finally:
+        for worker in workers:
+            worker.cancel()
+        await asyncio.gather(*workers, return_exceptions=True)
 
 
 async def fetch_github_profile(token: str, login: VerifiedGithubUsername) -> GithubProfile:
@@ -199,14 +247,9 @@ async def fetch_github_profile(token: str, login: VerifiedGithubUsername) -> Git
         limits=httpx.Limits(max_connections=_MAXIMUM_CONNECTIONS),
     ) as http_client:
         user = await _fetch_repositories(http_client, login)
-        agentic_commits_by_repository = await asyncio.gather(
-            *(
-                _fetch_repository_agentic_commits(http_client, repository.id)
-                for repository in user.repositories.nodes
-            )
-        )
+        agentic_commits = await _fetch_agentic_commits(http_client, user.repositories.nodes)
     return GithubProfile(
         GithubUserId(user.database_id),
         login,
-        tuple(chain.from_iterable(agentic_commits_by_repository)),
+        agentic_commits,
     )
