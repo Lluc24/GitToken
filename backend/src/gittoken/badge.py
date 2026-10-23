@@ -50,8 +50,8 @@ _environment = Environment(
     lstrip_blocks=True,
 )
 _environment.filters["compact_tokens"] = _format_tokens
-_badge_template = _environment.get_template("badge.svg")
-_profile_template = _environment.get_template("profile.svg")
+_badge_template = _environment.get_template("badge.svg.jinja")
+_profile_template = _environment.get_template("profile.svg.jinja")
 
 
 def _row(mark: str, name: str, tokens: int, total_tokens: int) -> _Row:
