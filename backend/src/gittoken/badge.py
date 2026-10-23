@@ -52,7 +52,7 @@ _environment = Environment(
 _environment.filters["compact_tokens"] = _format_tokens
 _badge_template = _environment.get_template("badge.svg.jinja")
 _profile_template = _environment.get_template("profile.svg.jinja")
-_scanning_template = _environment.get_template("scanning.svg.jinja")
+_notice_template = _environment.get_template("notice.svg.jinja")
 
 
 def _row(mark: str, name: str, tokens: int, total_tokens: int) -> _Row:
@@ -108,4 +108,14 @@ def render_profile_card(stats: ProfileStats, avatar: Avatar, theme: Theme) -> st
 
 def render_scanning_card(login: str, theme: Theme) -> str:
     """Post: a placeholder shown while the first scan of a profile is still running."""
-    return _scanning_template.render(login=login, theme=theme)
+    return _notice_template.render(
+        login=login,
+        message="Scanning public commits, back in a minute",
+        is_pending=True,
+        theme=theme,
+    )
+
+
+def render_error_card(login: str, message: str, theme: Theme) -> str:
+    """Post: a card explaining why the badge could not be drawn; READMEs show it instead of a broken image."""
+    return _notice_template.render(login=login, message=message, is_pending=False, theme=theme)

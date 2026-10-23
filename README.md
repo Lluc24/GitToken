@@ -35,7 +35,7 @@ The same data is drawn as SVG cards from Jinja templates, for the site and for R
 | `GET /v1/badges/{login}.svg` | Card without the photo |
 | `GET /v1/leaderboard` | Profiles scanned in the last day |
 
-Profiles and cards are cached by the CDN for a day, matching the Supabase cache. GitHub's image proxy gives up after a few seconds, so a card whose first scan takes longer answers with a "Scanning" placeholder for a minute while the scan finishes.
+Profiles and cards are cached by the CDN for a day, matching the Supabase cache. GitHub's image proxy gives up after a few seconds, so a card whose first scan takes longer answers with a "Scanning" placeholder for a minute while the scan finishes. Badge errors (unknown user, GitHub down) are drawn as a card with status 200 and cached for ten minutes, so a README never shows a broken image.
 
 ```
 make setup     # install everything, enable the pre-commit hook
