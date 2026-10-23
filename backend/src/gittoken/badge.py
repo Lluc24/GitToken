@@ -1,5 +1,6 @@
 from base64 import b64encode
 from dataclasses import dataclass
+from enum import StrEnum
 from io import BytesIO
 
 from jinja2 import Environment, PackageLoader, StrictUndefined
@@ -9,6 +10,19 @@ from gittoken.domain import NAME_BY_AGENT, Agent, Avatar
 
 _MAX_ROWS = 2
 _AVATAR_JPEG_QUALITY = 82
+
+
+class Theme(StrEnum):
+    DARK = "dark"
+    LIGHT = "light"
+
+
+@dataclass(frozen=True)
+class ProfileStats:
+    login: str
+    total_tokens: int
+    tokens_by_agent: dict[Agent, int]
+    rarity: str
 
 
 @dataclass(frozen=True)
@@ -55,17 +69,13 @@ def _rows(tokens_by_agent: dict[Agent, int], total_tokens: int) -> list[_Row]:
     return rows
 
 
-def render_badge(
-    login: str,
-    total_tokens: int,
-    tokens_by_agent: dict[Agent, int],
-    rarity: str,
-) -> str:
+def render_badge(stats: ProfileStats, theme: Theme) -> str:
     return _badge_template.render(
-        login=login,
-        total_tokens=total_tokens,
-        rarity=rarity,
-        rows=_rows(tokens_by_agent, total_tokens),
+        login=stats.login,
+        total_tokens=stats.total_tokens,
+        rarity=stats.rarity,
+        theme=theme,
+        rows=_rows(stats.tokens_by_agent, stats.total_tokens),
     )
 
 
@@ -77,21 +87,18 @@ def _avatar_data_url(avatar: Avatar) -> str:
     return f"data:image/jpeg;base64,{b64encode(jpeg.getvalue()).decode()}"
 
 
-def render_profile_card(
-    login: str,
-    total_tokens: int,
-    tokens_by_agent: dict[Agent, int],
-    rarity: str,
-    avatar: Avatar,
-) -> str:
+def render_profile_card(stats: ProfileStats, avatar: Avatar, theme: Theme) -> str:
     """Post: a self-contained SVG; the avatar is inlined because READMEs block external images."""
-    rows = _rows(tokens_by_agent, total_tokens)
+    rows = _rows(stats.tokens_by_agent, stats.total_tokens)
     agents = ", ".join(f"{row.name} {_format_tokens(row.tokens)}" for row in rows)
-    description = f"{login}: {_format_tokens(total_tokens)} estimated tokens, {rarity}"
+    description = (
+        f"{stats.login}: {_format_tokens(stats.total_tokens)} estimated tokens, {stats.rarity}"
+    )
     return _profile_template.render(
-        login=login,
-        total_tokens=total_tokens,
-        rarity=rarity,
+        login=stats.login,
+        total_tokens=stats.total_tokens,
+        rarity=stats.rarity,
+        theme=theme,
         rows=rows,
         description=f"{description}. {agents}." if rows else f"{description}.",
         avatar_url=_avatar_data_url(avatar),

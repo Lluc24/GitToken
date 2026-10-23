@@ -11,8 +11,13 @@
       crossorigin="anonymous"
     />
     <title>GitToken</title>
+    <script>
+      document.documentElement.dataset.theme =
+        localStorage.getItem("theme") ??
+        (matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
+    </script>
   </head>
-  <body class="min-h-screen bg-night font-sans text-white antialiased">
+  <body class="min-h-screen bg-canvas font-sans text-ink antialiased">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

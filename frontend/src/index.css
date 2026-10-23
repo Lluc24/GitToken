@@ -1,12 +1,13 @@
 @import "tailwindcss";
 
+@custom-variant light (&:where([data-theme="light"], [data-theme="light"] *));
+
 @theme {
   --font-sans:
     -apple-system, BlinkMacSystemFont, "SF Pro Display", "Inter", system-ui,
     sans-serif;
   --font-mono: "SF Mono", ui-monospace, Menlo, monospace;
   --color-night: #05060f;
-  --color-muted: rgb(255 255 255 / 0.62);
   --animate-drift: drift 18s ease-in-out infinite;
 
   @keyframes drift {
@@ -18,4 +19,48 @@
       transform: translate(6vw, 4vh) scale(1.15);
     }
   }
+}
+
+/* Colours that follow the data-theme attribute on <html>. */
+@theme inline {
+  --color-canvas: var(--canvas);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-link: var(--link);
+  --color-well: var(--well);
+  --color-glass-edge: var(--glass-edge);
+  --color-glass-from: var(--glass-from);
+  --color-glass-to: var(--glass-to);
+  --color-glass-hover: var(--glass-hover);
+  --shadow-glass: var(--glass-shadow);
+}
+
+:root {
+  --canvas: #05060f;
+  --ink: #ffffff;
+  --muted: rgb(255 255 255 / 0.62);
+  --link: var(--color-cyan-200);
+  --well: rgb(0 0 0 / 0.4);
+  --glass-edge: rgb(255 255 255 / 0.2);
+  --glass-from: rgb(255 255 255 / 0.15);
+  --glass-to: rgb(255 255 255 / 0.05);
+  --glass-hover: rgb(255 255 255 / 0.25);
+  --glass-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.45),
+    inset 0 -1px 0 rgb(255 255 255 / 0.08), 0 24px 60px -24px rgb(0 0 0 / 0.7);
+}
+
+[data-theme="light"] {
+  --canvas: #eef1f8;
+  --ink: #0b0e1a;
+  --muted: rgb(11 14 26 / 0.58);
+  --link: var(--color-cyan-700);
+  --well: rgb(11 14 26 / 0.06);
+  --glass-edge: rgb(255 255 255 / 0.9);
+  --glass-from: rgb(255 255 255 / 0.75);
+  --glass-to: rgb(255 255 255 / 0.4);
+  --glass-hover: rgb(255 255 255 / 0.95);
+  --glass-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 1), inset 0 -1px 0 rgb(255 255 255 / 0.5),
+    0 24px 60px -28px rgb(15 23 42 / 0.25);
 }

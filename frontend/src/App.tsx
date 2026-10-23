@@ -14,9 +14,12 @@ import { glassClassName, pressableClassName } from "./glass";
 import { Leaderboard } from "./Leaderboard";
 import { LoginForm } from "./LoginForm";
 import { ShareCard } from "./ShareCard";
+import { ThemeToggle } from "./ThemeToggle";
+import { useTheme } from "./theme";
 
 function ProfileTokensResult({ login }: { login: string }) {
   const profileTokens = useProfileTokens(login);
+  const theme = useTheme();
 
   if (profileTokens.isPending) {
     return (
@@ -31,7 +34,7 @@ function ProfileTokensResult({ login }: { login: string }) {
     return (
       <p
         role="alert"
-        className={`rounded-3xl px-5 py-3 text-rose-200 ${glassClassName}`}
+        className={`rounded-3xl px-5 py-3 text-rose-200 light:text-rose-700 ${glassClassName}`}
       >
         {profileTokens.error.message}
       </p>
@@ -41,10 +44,10 @@ function ProfileTokensResult({ login }: { login: string }) {
   return (
     <section className="flex flex-col items-center gap-6">
       <img
-        src={profileCardPath(data.login)}
+        src={profileCardPath(data.login, theme)}
         alt={`${data.login}: ${formatTokens(data.totalTokens)} estimated tokens, ${data.rarity}`}
         width={300}
-        className="drop-shadow-[0_30px_50px_rgb(0_0_0/0.6)]"
+        className="drop-shadow-[0_30px_50px_rgb(0_0_0/0.6)] light:drop-shadow-[0_24px_40px_rgb(15_23_42/0.18)]"
       />
       <ShareCard login={data.login} totalTokens={data.totalTokens} />
     </section>
@@ -57,7 +60,7 @@ function ProfilePage() {
 
   return (
     <main className="mx-auto flex max-w-xl flex-col items-center gap-8 px-4 py-12">
-      <h1 className="bg-gradient-to-br from-white via-white to-white/40 bg-clip-text font-extrabold text-6xl text-transparent tracking-tighter sm:text-7xl">
+      <h1 className="bg-gradient-to-br from-ink via-ink to-ink/40 bg-clip-text font-extrabold text-6xl text-transparent tracking-tighter sm:text-7xl">
         GitToken
       </h1>
       <LoginForm
@@ -77,9 +80,9 @@ export function App() {
     <BrowserRouter>
       <div className="relative min-h-screen overflow-hidden">
         <div aria-hidden="true" className="fixed inset-0 -z-10">
-          <div className="absolute animate-drift rounded-full opacity-55 blur-[90px] motion-reduce:animate-none top-[-10%] left-[-10%] size-[55vmax] bg-cyan-500" />
-          <div className="absolute animate-drift rounded-full opacity-55 blur-[90px] motion-reduce:animate-none top-[20%] right-[-15%] size-[50vmax] bg-violet-600 [animation-delay:-6s]" />
-          <div className="absolute animate-drift rounded-full opacity-55 blur-[90px] motion-reduce:animate-none bottom-[-20%] left-[20%] size-[45vmax] bg-fuchsia-500 [animation-delay:-12s]" />
+          <div className="absolute animate-drift rounded-full opacity-55 blur-[90px] motion-reduce:animate-none top-[-10%] left-[-10%] size-[55vmax] bg-cyan-500 light:bg-cyan-300" />
+          <div className="absolute animate-drift rounded-full opacity-55 blur-[90px] motion-reduce:animate-none top-[20%] right-[-15%] size-[50vmax] bg-violet-600 light:bg-violet-300 [animation-delay:-6s]" />
+          <div className="absolute animate-drift rounded-full opacity-55 blur-[90px] motion-reduce:animate-none bottom-[-20%] left-[20%] size-[45vmax] bg-fuchsia-500 light:bg-pink-300 [animation-delay:-12s]" />
         </div>
         <header
           className={`sticky top-4 z-10 mx-auto mt-4 flex w-[calc(100%-2rem)] max-w-3xl items-center justify-between rounded-full py-2 pr-2 pl-4 ${glassClassName}`}
@@ -116,22 +119,23 @@ export function App() {
           <nav className="flex items-center gap-1 text-sm">
             <Link
               to="/leaderboard"
-              className={`rounded-full px-4 py-2 text-white/80 hover:bg-white/15 hover:text-white ${pressableClassName}`}
+              className={`rounded-full px-4 py-2 text-ink/80 hover:bg-ink/15 hover:text-ink ${pressableClassName}`}
             >
               Leaderboard
             </Link>
             <Link
               to="/badges"
-              className={`rounded-full px-4 py-2 text-white/80 hover:bg-white/15 hover:text-white ${pressableClassName}`}
+              className={`rounded-full px-4 py-2 text-ink/80 hover:bg-ink/15 hover:text-ink ${pressableClassName}`}
             >
               Badges
             </Link>
             <a
               href="https://github.com/Lluc24/GitToken"
-              className={`rounded-full px-4 py-2 text-white/80 hover:bg-white/15 hover:text-white ${pressableClassName}`}
+              className={`rounded-full px-4 py-2 text-ink/80 hover:bg-ink/15 hover:text-ink ${pressableClassName}`}
             >
               GitHub
             </a>
+            <ThemeToggle />
           </nav>
         </header>
         <Routes>
@@ -154,7 +158,7 @@ export function App() {
                 <h1 className="font-bold text-3xl tracking-tight">
                   Page not found
                 </h1>
-                <Link to="/" className="text-cyan-300 hover:text-cyan-200">
+                <Link to="/" className="text-cyan-300 hover:text-link">
                   Back to GitToken
                 </Link>
               </main>

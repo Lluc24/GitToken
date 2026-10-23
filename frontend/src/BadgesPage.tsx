@@ -3,23 +3,33 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { type Badge, badges } from "./badges";
 import { glassClassName, pressableClassName } from "./glass";
 import { LoginForm } from "./LoginForm";
+import { type Theme, useTheme } from "./theme";
 
-type SnippetFormat = "Markdown" | "HTML" | "URL";
+type SnippetFormat = "README" | "Markdown" | "URL";
 
-const snippetFormats: SnippetFormat[] = ["Markdown", "HTML", "URL"];
+const snippetFormats: SnippetFormat[] = ["README", "Markdown", "URL"];
 
+// README follows the reader's GitHub theme through <picture>; the others use the site's theme.
 function snippet(
   format: SnippetFormat,
   login: string,
   badge: Badge,
-  origin: string,
+  theme: Theme,
 ): string {
-  const badgeUrl = `${origin}${badge.path(login)}`;
+  const { origin } = window.location;
+  const badgeUrl = `${origin}${badge.path(login, theme)}`;
   const profileUrl = `${origin}/${encodeURIComponent(login)}`;
   const alt = `${login}'s GitToken ${badge.name.toLowerCase()}`;
   const snippetByFormat: Record<SnippetFormat, string> = {
+    README: [
+      `<a href="${profileUrl}">`,
+      "  <picture>",
+      `    <source media="(prefers-color-scheme: dark)" srcset="${origin}${badge.path(login, "dark")}">`,
+      `    <img src="${origin}${badge.path(login, "light")}" alt="${alt}">`,
+      "  </picture>",
+      "</a>",
+    ].join("\n"),
     Markdown: `[![${alt}](${badgeUrl})](${profileUrl})`,
-    HTML: `<a href="${profileUrl}"><img src="${badgeUrl}" alt="${alt}"></a>`,
     URL: badgeUrl,
   };
   return snippetByFormat[format];
@@ -39,7 +49,7 @@ function SegmentedControl<Option extends string>({
   onSelect,
 }: SegmentedControlProps<Option>) {
   return (
-    <fieldset className="flex w-fit rounded-full bg-white/10 p-1 text-sm">
+    <fieldset className="flex w-fit rounded-full bg-ink/10 p-1 text-sm">
       <legend className="sr-only">{label}</legend>
       {options.map((option) => (
         <button
@@ -47,7 +57,7 @@ function SegmentedControl<Option extends string>({
           type="button"
           aria-pressed={option === selected}
           onClick={() => onSelect(option)}
-          className={`rounded-full px-3 py-1 transition-colors ${option === selected ? "bg-white font-medium text-night" : "text-white/70 hover:text-white"}`}
+          className={`rounded-full px-3 py-1 transition-colors ${option === selected ? "bg-ink font-medium text-canvas" : "text-ink/70 hover:text-ink"}`}
         >
           {option}
         </button>
@@ -57,9 +67,10 @@ function SegmentedControl<Option extends string>({
 }
 
 function BadgeSection({ login, badge }: { login: string; badge: Badge }) {
-  const [format, setFormat] = useState<SnippetFormat>("Markdown");
+  const theme = useTheme();
+  const [format, setFormat] = useState<SnippetFormat>("README");
   const [copiedFormat, setCopiedFormat] = useState<SnippetFormat | null>(null);
-  const text = snippet(format, login, badge, window.location.origin);
+  const text = snippet(format, login, badge, theme);
 
   async function copySnippet() {
     await navigator.clipboard.writeText(text);
@@ -81,7 +92,10 @@ function BadgeSection({ login, badge }: { login: string; badge: Badge }) {
         <p className="text-muted text-sm">{badge.description}</p>
       </div>
       <div className="flex justify-center py-6">
-        <img src={badge.path(login)} alt={`${login}'s ${badge.name} badge`} />
+        <img
+          src={badge.path(login, theme)}
+          alt={`${login}'s ${badge.name} badge`}
+        />
       </div>
       <div className="mt-4">
         <SegmentedControl
@@ -91,8 +105,8 @@ function BadgeSection({ login, badge }: { login: string; badge: Badge }) {
           onSelect={setFormat}
         />
       </div>
-      <div className="mt-2 flex items-center gap-2 rounded-2xl bg-black/40 py-2 pr-2 pl-4 shadow-[inset_0_1px_0_rgb(255_255_255/0.08)]">
-        <code className="min-w-0 flex-1 truncate font-mono text-[13px] text-white/85">
+      <div className="mt-2 flex items-center gap-2 rounded-2xl bg-well py-2 pr-2 pl-4 shadow-[inset_0_1px_0_rgb(255_255_255/0.08)]">
+        <code className="min-w-0 flex-1 truncate font-mono text-[13px] text-ink/85">
           {text}
         </code>
         <button
@@ -130,12 +144,12 @@ export function BadgesPage() {
             <img
               src={`https://avatars.githubusercontent.com/${encodeURIComponent(login)}?size=64`}
               alt=""
-              className="size-8 rounded-full ring-1 ring-white/30"
+              className="size-8 rounded-full ring-1 ring-ink/30"
             />
             <span className="font-medium">{login}</span>
             <Link
               to="/badges"
-              className="rounded-full bg-white/10 px-3 py-1.5 text-sm text-white/80 hover:bg-white/20 hover:text-white"
+              className="rounded-full bg-ink/10 px-3 py-1.5 text-sm text-ink/80 hover:bg-ink/20 hover:text-ink"
             >
               Change
             </Link>
