@@ -1,12 +1,13 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
 @theme {
   --font-sans:
     -apple-system, BlinkMacSystemFont, "SF Pro Display", "Inter", system-ui,
     sans-serif;
   --font-mono: "SF Mono", ui-monospace, Menlo, monospace;
   --color-night: #05060f;
-  --color-muted: rgb(255 255 255 / 0.62);
   --animate-drift: drift 18s ease-in-out infinite;
 
   @keyframes drift {

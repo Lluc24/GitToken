@@ -1,11 +1,13 @@
+import type { Theme } from "./theme";
+
 export type Badge = {
   name: string;
   description: string;
-  path: (login: string) => string;
+  path: (login: string, theme: Theme) => string;
 };
 
-export function profileCardPath(login: string): string {
-  return `/v1/badges/${encodeURIComponent(login)}/profile.svg`;
+export function profileCardPath(login: string, theme: Theme): string {
+  return `/v1/badges/${encodeURIComponent(login)}/profile.svg?theme=${theme}`;
 }
 
 export const badges: Badge[] = [
@@ -17,6 +19,7 @@ export const badges: Badge[] = [
   {
     name: "Card",
     description: "Rarity, total tokens and top agents, without the photo.",
-    path: (login) => `/v1/badges/${encodeURIComponent(login)}.svg`,
+    path: (login, theme) =>
+      `/v1/badges/${encodeURIComponent(login)}.svg?theme=${theme}`,
   },
 ];

@@ -7,8 +7,9 @@
 {% set track = width - 2 * padding - 8 %}
 {% set font = "-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif" %}
 {% set mono = "'SF Mono', ui-monospace, Menlo, monospace" %}
-{% from "rarity_colors.jinja" import colors %}
-{% set color = colors[rarity] %}
+{% from "palette.jinja" import palettes %}
+{% set palette = palettes[theme] %}
+{% set color = palette.rarities[rarity] %}
 {% set aria = login ~ ": " ~ "{:,}".format(total_tokens) ~ " estimated tokens, " ~ rarity %}
 <svg xmlns="http://www.w3.org/2000/svg" width="{{ width }}" height="{{ height }}" viewBox="0 0 {{ width }} {{ height }}" role="img" aria-label="{{ aria }}">
   <title>{{ aria }}</title>
@@ -27,24 +28,24 @@
       <stop offset="1" stop-color="{{ color[3] }}"/>
     </linearGradient>
   </defs>
-  <rect width="{{ width }}" height="{{ height }}" rx="24" fill="#0b0e1a"/>
+  <rect width="{{ width }}" height="{{ height }}" rx="24" fill="{{ palette.background }}"/>
   <rect width="{{ width }}" height="{{ height }}" rx="24" fill="url(#tint)"/>
   <rect x="1" y="1" width="{{ width - 2 }}" height="{{ height - 2 }}" rx="23" fill="none" stroke="url(#rim)" stroke-width="2"/>
-  <text x="{{ padding + 4 }}" y="{{ padding + 22 }}" fill="#ffffff" font-family="{{ font }}" font-size="20" font-weight="700" letter-spacing="-0.3">{{ login }}</text>
+  <text x="{{ padding + 4 }}" y="{{ padding + 22 }}" fill="{{ palette.ink }}" font-family="{{ font }}" font-size="20" font-weight="700" letter-spacing="-0.3">{{ login }}</text>
   <text x="{{ padding + 4 }}" y="{{ padding + 42 }}" fill="{{ color[0] }}" font-family="{{ font }}" font-size="10.5" font-weight="600" letter-spacing="3">{{ rarity | upper }}</text>
   <text x="{{ width - padding - 4 }}" y="{{ padding + 32 }}" text-anchor="end" fill="{{ color[0] }}" font-family="{{ font }}" font-size="28" font-weight="700" letter-spacing="-0.5">{{ total_tokens | compact_tokens }}</text>
 {% if rows %}
-  <rect x="{{ padding - 8 }}" y="{{ rows_top }}" width="{{ width - 2 * padding + 16 }}" height="{{ panel_height }}" rx="18" fill="#ffffff" fill-opacity="0.06"/>
+  <rect x="{{ padding - 8 }}" y="{{ rows_top }}" width="{{ width - 2 * padding + 16 }}" height="{{ panel_height }}" rx="18" fill="{{ palette.ink }}" fill-opacity="0.06"/>
 {% endif %}
 {% for row in rows %}
 {% set top = rows_top + 10 + loop.index0 * row_height %}
 {% set bar_width = [6, (track * row.share) | round | int] | max if total_tokens else 0 %}
-  <g transform="translate({{ padding + 4 }} {{ top }})">
+  <g transform="translate({{ padding + 4 }} {{ top }})" color="{{ palette.ink }}">
     {% include "marks/" ~ row.mark ~ ".svg" ignore missing %}
   </g>
-  <text x="{{ padding + 26 }}" y="{{ top + 12 }}" fill="#ffffff" font-family="{{ font }}" font-size="12.5" font-weight="500">{{ row.name }}</text>
-  <text x="{{ width - padding - 4 }}" y="{{ top + 12 }}" text-anchor="end" fill="#ffffff" fill-opacity="0.85" font-family="{{ mono }}" font-size="11.5">{{ row.tokens | compact_tokens }} · {{ row.percent }}%</text>
-  <rect x="{{ padding + 4 }}" y="{{ top + 19 }}" width="{{ track }}" height="6" rx="3" fill="#ffffff" fill-opacity="0.1"/>
+  <text x="{{ padding + 26 }}" y="{{ top + 12 }}" fill="{{ palette.ink }}" font-family="{{ font }}" font-size="12.5" font-weight="500">{{ row.name }}</text>
+  <text x="{{ width - padding - 4 }}" y="{{ top + 12 }}" text-anchor="end" fill="{{ palette.ink }}" fill-opacity="0.85" font-family="{{ mono }}" font-size="11.5">{{ row.tokens | compact_tokens }} · {{ row.percent }}%</text>
+  <rect x="{{ padding + 4 }}" y="{{ top + 19 }}" width="{{ track }}" height="6" rx="3" fill="{{ palette.ink }}" fill-opacity="0.1"/>
   <rect x="{{ padding + 4 }}" y="{{ top + 19 }}" width="{{ bar_width }}" height="6" rx="3" fill="url(#bar)"/>
 {% endfor %}
 </svg>

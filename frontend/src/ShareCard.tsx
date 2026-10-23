@@ -3,15 +3,16 @@ import { Link } from "react-router-dom";
 import { profileCardPath } from "./badges";
 import { formatTokens } from "./format";
 import { pressableClassName } from "./glass";
+import { type Theme, useTheme } from "./theme";
 
 type ShareCardProps = {
   login: string;
   totalTokens: number;
 };
 
-async function renderCardPng(login: string): Promise<File> {
+async function renderCardPng(login: string, theme: Theme): Promise<File> {
   const card = new Image();
-  card.src = profileCardPath(login);
+  card.src = profileCardPath(login, theme);
   await card.decode();
   const canvas = document.createElement("canvas");
   canvas.width = card.naturalWidth * 2;
@@ -28,6 +29,7 @@ async function renderCardPng(login: string): Promise<File> {
 
 export function ShareCard({ login, totalTokens }: ShareCardProps) {
   const [status, setStatus] = useState("");
+  const theme = useTheme();
   const [cardFile, setCardFile] = useState<File | null>(null);
   const profileUrl = `${window.location.origin}/${encodeURIComponent(login)}`;
   const postText = `${login} spent an estimated ${formatTokens(totalTokens)} tokens through coding agents. What's your GitToken card?`;
@@ -35,7 +37,7 @@ export function ShareCard({ login, totalTokens }: ShareCardProps) {
   // Safari only opens the share sheet right after a click, so the image is ready before it.
   useEffect(() => {
     let isCurrent = true;
-    renderCardPng(login).then((file) => {
+    renderCardPng(login, theme).then((file) => {
       if (isCurrent) {
         setCardFile(file);
       }
@@ -43,7 +45,7 @@ export function ShareCard({ login, totalTokens }: ShareCardProps) {
     return () => {
       isCurrent = false;
     };
-  }, [login]);
+  }, [login, theme]);
 
   async function share() {
     if (typeof navigator.share === "function") {
@@ -97,11 +99,14 @@ export function ShareCard({ login, totalTokens }: ShareCardProps) {
       </button>
       <Link
         to={`/${encodeURIComponent(login)}/badges`}
-        className="text-muted text-sm hover:text-white"
+        className="text-night/60 dark:text-white/60 text-sm hover:text-night dark:hover:text-white"
       >
         Add it to your README
       </Link>
-      <p role="status" className="min-h-5 text-muted text-sm">
+      <p
+        role="status"
+        className="min-h-5 text-night/60 dark:text-white/60 text-sm"
+      >
         {status}
       </p>
     </section>

@@ -11,7 +11,7 @@ from pydantic import BaseModel, SecretStr
 from pydantic_settings import BaseSettings
 from sentry_sdk.integrations.loguru import LoguruIntegration
 
-from gittoken.badge import render_badge, render_profile_card
+from gittoken.badge import ProfileStats, Theme, render_badge, render_profile_card
 from gittoken.db import LeaderboardEntry, fetch_cached_profile, fetch_leaderboard, save_profile
 from gittoken.domain import (
     MIN_TOKENS_BY_RARITY,
@@ -51,6 +51,15 @@ class AgentResponse(BaseModel):
 class RarityResponse(BaseModel):
     rarity: Rarity
     min_tokens: int
+
+
+def _profile_stats(profile: ProfileTokensResponse) -> ProfileStats:
+    return ProfileStats(
+        login=profile.login,
+        total_tokens=profile.total_tokens,
+        tokens_by_agent=profile.tokens_by_agent,
+        rarity=profile.rarity,
+    )
 
 
 def create_app() -> FastAPI:
@@ -138,15 +147,11 @@ def create_app() -> FastAPI:
     @app.get("/v1/badges/{login}.svg")
     async def get_badge(
         login: Annotated[VerifiedGithubUsername, Path(pattern=_GITHUB_LOGIN_PATTERN)],
+        theme: Theme = Theme.DARK,
     ) -> Response:
         profile = await get_user_tokens(login, Response())
         return Response(
-            render_badge(
-                profile.login,
-                profile.total_tokens,
-                profile.tokens_by_agent,
-                profile.rarity,
-            ),
+            render_badge(_profile_stats(profile), theme),
             media_type="image/svg+xml",
             headers={
                 "Cache-Control": "public, max-age=0, s-maxage=3600, stale-while-revalidate=3600",
@@ -157,6 +162,7 @@ def create_app() -> FastAPI:
     @app.get("/v1/badges/{login}/profile.svg")
     async def get_profile_card(
         login: Annotated[VerifiedGithubUsername, Path(pattern=_GITHUB_LOGIN_PATTERN)],
+        theme: Theme = Theme.DARK,
     ) -> Response:
         profile = await get_user_tokens(login, Response())
         try:
@@ -168,13 +174,7 @@ def create_app() -> FastAPI:
                 headers={"Cache-Control": "no-store"},
             ) from error
         return Response(
-            render_profile_card(
-                profile.login,
-                profile.total_tokens,
-                profile.tokens_by_agent,
-                profile.rarity,
-                avatar,
-            ),
+            render_profile_card(_profile_stats(profile), avatar, theme),
             media_type="image/svg+xml",
             headers={
                 "Cache-Control": "public, max-age=0, s-maxage=3600, stale-while-revalidate=3600",

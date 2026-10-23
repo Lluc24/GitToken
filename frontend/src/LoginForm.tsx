@@ -22,7 +22,7 @@ export function LoginForm({
   return (
     <form
       onSubmit={submitLogin}
-      className={`flex w-full items-center gap-2 rounded-full p-1.5 pl-6 focus-within:ring-2 focus-within:ring-white/40 ${glassClassName}`}
+      className={`flex w-full items-center gap-2 rounded-full p-1.5 pl-6 focus-within:ring-2 focus-within:ring-night/40 dark:focus-within:ring-white/40 ${glassClassName}`}
     >
       <label className="flex flex-1 flex-col">
         <span className="sr-only">GitHub username</span>
@@ -30,7 +30,7 @@ export function LoginForm({
           value={typedLogin}
           onChange={(event) => setTypedLogin(event.target.value)}
           placeholder="GitHub username"
-          className="w-full bg-transparent py-2 text-lg text-white outline-none placeholder:text-white/40"
+          className="w-full bg-transparent py-2 text-lg text-night dark:text-white outline-none placeholder:text-night/40 dark:placeholder:text-white/40"
         />
       </label>
       <button

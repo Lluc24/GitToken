@@ -1,0 +1,25 @@
+{# Per theme: the card base, the ink for text and marks, and per rarity the accent, then the rim and bar gradient stops. #}
+{% set palettes = {
+  "dark": {
+    "background": "#0b0e1a",
+    "ink": "#ffffff",
+    "rarities": {
+      "common": ("#7dd3fc", "#e0f2fe", "#38bdf8", "#3b82f6"),
+      "rare": ("#fdba74", "#fde68a", "#fb923c", "#f43f5e"),
+      "epic": ("#c4b5fd", "#f0abfc", "#8b5cf6", "#3b82f6"),
+      "legendary": ("#a5f3fc", "#67e8f9", "#e879f9", "#fcd34d"),
+      "champion": ("#fcd34d", "#fef3c7", "#f59e0b", "#f97316"),
+    },
+  },
+  "light": {
+    "background": "#ffffff",
+    "ink": "#0b0e1a",
+    "rarities": {
+      "common": ("#0284c7", "#7dd3fc", "#38bdf8", "#2563eb"),
+      "rare": ("#ea580c", "#fdba74", "#fb923c", "#e11d48"),
+      "epic": ("#7c3aed", "#d8b4fe", "#8b5cf6", "#2563eb"),
+      "legendary": ("#0e7490", "#67e8f9", "#e879f9", "#f59e0b"),
+      "champion": ("#b45309", "#fcd34d", "#f59e0b", "#ea580c"),
+    },
+  },
+} %}
