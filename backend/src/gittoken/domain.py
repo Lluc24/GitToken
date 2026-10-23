@@ -93,6 +93,9 @@ class ProfileNotFoundError(Exception):
 # A username that passed the format check at the boundary.
 VerifiedGithubUsername = NewType("VerifiedGithubUsername", str)
 
+# Image bytes that GitHub served with a PNG, JPEG or GIF media type.
+Avatar = NewType("Avatar", bytes)
+
 # GitHub's immutable numeric user id; logins can be renamed.
 GithubUserId = NewType("GithubUserId", int)
 

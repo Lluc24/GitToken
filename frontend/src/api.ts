@@ -76,25 +76,3 @@ export function useLeaderboard() {
     retry: false,
   });
 }
-
-const agentsResponse = z.array(
-  z.object({ agent: z.string(), name: z.string() }),
-);
-
-async function fetchNameByAgent(): Promise<Record<string, string>> {
-  const response = await fetch("/v1/agents");
-  if (!response.ok) {
-    throw new Error(`The GitToken API answered ${response.status}`);
-  }
-  const body = agentsResponse.parse(await response.json());
-  return Object.fromEntries(body.map(({ agent, name }) => [agent, name]));
-}
-
-export function useNameByAgent() {
-  return useQuery({
-    queryKey: ["agent-names"],
-    queryFn: fetchNameByAgent,
-    staleTime: Number.POSITIVE_INFINITY,
-    retry: false,
-  });
-}

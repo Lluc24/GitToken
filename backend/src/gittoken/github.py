@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field, ValidationError, model_validator
 
 from gittoken.domain import (
     AgenticCommit,
+    Avatar,
     GithubProfile,
     GithubRequestError,
     GithubUserId,
@@ -17,6 +18,10 @@ from gittoken.domain import (
 )
 
 _GRAPHQL_URL = "https://api.github.com/graphql"
+_AVATAR_URL = "https://avatars.githubusercontent.com/{login}"
+# Twice the 276-pixel photo on the profile card, for high-density screens.
+_AVATAR_SIZE_PIXELS = 552
+_AVATAR_MEDIA_TYPES = frozenset({"image/png", "image/jpeg", "image/gif"})
 _TIMEOUT_SECONDS = 30
 _MAXIMUM_CONNECTIONS = 8
 # GitHub timestamps are UTC ISO 8601, so they compare correctly as strings.
@@ -253,3 +258,16 @@ async def fetch_github_profile(token: str, login: VerifiedGithubUsername) -> Git
         login,
         agentic_commits,
     )
+
+
+async def fetch_avatar(login: VerifiedGithubUsername) -> Avatar:
+    """Post: the user's avatar image, or GithubRequestError for a non-image answer."""
+    async with httpx.AsyncClient(timeout=_TIMEOUT_SECONDS, follow_redirects=True) as http_client:
+        response = await http_client.get(
+            _AVATAR_URL.format(login=login), params={"size": _AVATAR_SIZE_PIXELS}
+        )
+    response.raise_for_status()
+    media_type = response.headers.get("Content-Type", "").split(";")[0].strip()
+    if media_type not in _AVATAR_MEDIA_TYPES:
+        raise GithubRequestError(f"GitHub returned an avatar of type {media_type!r}")
+    return Avatar(response.content)

@@ -1,10 +1,14 @@
+from base64 import b64encode
 from dataclasses import dataclass
+from io import BytesIO
 
 from jinja2 import Environment, PackageLoader, StrictUndefined
+from PIL import Image
 
-from gittoken.domain import NAME_BY_AGENT, Agent
+from gittoken.domain import NAME_BY_AGENT, Agent, Avatar
 
 _MAX_ROWS = 2
+_AVATAR_JPEG_QUALITY = 82
 
 
 @dataclass(frozen=True)
@@ -32,7 +36,8 @@ _environment = Environment(
     lstrip_blocks=True,
 )
 _environment.filters["compact_tokens"] = _format_tokens
-_template = _environment.get_template("badge.svg")
+_badge_template = _environment.get_template("badge.svg")
+_profile_template = _environment.get_template("profile.svg")
 
 
 def _row(mark: str, name: str, tokens: int, total_tokens: int) -> _Row:
@@ -56,9 +61,38 @@ def render_badge(
     tokens_by_agent: dict[Agent, int],
     rarity: str,
 ) -> str:
-    return _template.render(
+    return _badge_template.render(
         login=login,
         total_tokens=total_tokens,
         rarity=rarity,
         rows=_rows(tokens_by_agent, total_tokens),
+    )
+
+
+def _avatar_data_url(avatar: Avatar) -> str:
+    """Post: a JPEG data URL; GitHub serves some photos as PNGs several times larger."""
+    jpeg = BytesIO()
+    with Image.open(BytesIO(avatar)) as image:
+        image.convert("RGB").save(jpeg, "JPEG", quality=_AVATAR_JPEG_QUALITY, optimize=True)
+    return f"data:image/jpeg;base64,{b64encode(jpeg.getvalue()).decode()}"
+
+
+def render_profile_card(
+    login: str,
+    total_tokens: int,
+    tokens_by_agent: dict[Agent, int],
+    rarity: str,
+    avatar: Avatar,
+) -> str:
+    """Post: a self-contained SVG; the avatar is inlined because READMEs block external images."""
+    rows = _rows(tokens_by_agent, total_tokens)
+    agents = ", ".join(f"{row.name} {_format_tokens(row.tokens)}" for row in rows)
+    description = f"{login}: {_format_tokens(total_tokens)} estimated tokens, {rarity}"
+    return _profile_template.render(
+        login=login,
+        total_tokens=total_tokens,
+        rarity=rarity,
+        rows=rows,
+        description=f"{description}. {agents}." if rows else f"{description}.",
+        avatar_url=_avatar_data_url(avatar),
     )
