@@ -99,11 +99,14 @@ export function ShareCard({ login, totalTokens }: ShareCardProps) {
       </button>
       <Link
         to={`/${encodeURIComponent(login)}/badges`}
-        className="text-muted text-sm hover:text-ink"
+        className="text-night/60 dark:text-white/60 text-sm hover:text-night dark:hover:text-white"
       >
         Add it to your README
       </Link>
-      <p role="status" className="min-h-5 text-muted text-sm">
+      <p
+        role="status"
+        className="min-h-5 text-night/60 dark:text-white/60 text-sm"
+      >
         {status}
       </p>
     </section>

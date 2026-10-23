@@ -11,7 +11,7 @@ const iconPathsByTheme: Record<Theme, string[]> = {
 export function ThemeToggle() {
   const selectedTheme = useTheme();
   return (
-    <fieldset className="flex rounded-full bg-ink/10 p-0.5">
+    <fieldset className="flex rounded-full bg-night/10 dark:bg-white/10 p-0.5">
       <legend className="sr-only">Theme</legend>
       {(["light", "dark"] as const).map((theme) => (
         <button
@@ -20,7 +20,7 @@ export function ThemeToggle() {
           aria-label={`${theme} theme`}
           aria-pressed={theme === selectedTheme}
           onClick={() => setTheme(theme)}
-          className={`flex size-8 items-center justify-center rounded-full transition-colors ${theme === selectedTheme ? "bg-ink text-canvas" : "text-ink/60 hover:text-ink"}`}
+          className={`flex size-8 items-center justify-center rounded-full transition-colors ${theme === selectedTheme ? "bg-night dark:bg-white text-white dark:text-night" : "text-night/60 dark:text-white/60 hover:text-night dark:hover:text-white"}`}
         >
           <svg
             viewBox="0 0 24 24"

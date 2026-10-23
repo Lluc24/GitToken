@@ -49,7 +49,7 @@ function SegmentedControl<Option extends string>({
   onSelect,
 }: SegmentedControlProps<Option>) {
   return (
-    <fieldset className="flex w-fit rounded-full bg-ink/10 p-1 text-sm">
+    <fieldset className="flex w-fit rounded-full bg-night/10 dark:bg-white/10 p-1 text-sm">
       <legend className="sr-only">{label}</legend>
       {options.map((option) => (
         <button
@@ -57,7 +57,7 @@ function SegmentedControl<Option extends string>({
           type="button"
           aria-pressed={option === selected}
           onClick={() => onSelect(option)}
-          className={`rounded-full px-3 py-1 transition-colors ${option === selected ? "bg-ink font-medium text-canvas" : "text-ink/70 hover:text-ink"}`}
+          className={`rounded-full px-3 py-1 transition-colors ${option === selected ? "bg-night dark:bg-white font-medium text-white dark:text-night" : "text-night/70 dark:text-white/70 hover:text-night dark:hover:text-white"}`}
         >
           {option}
         </button>
@@ -89,7 +89,9 @@ function BadgeSection({ login, badge }: { login: string; badge: Badge }) {
         >
           {badge.name}
         </h2>
-        <p className="text-muted text-sm">{badge.description}</p>
+        <p className="text-night/60 dark:text-white/60 text-sm">
+          {badge.description}
+        </p>
       </div>
       <div className="flex justify-center py-6">
         <img
@@ -105,8 +107,8 @@ function BadgeSection({ login, badge }: { login: string; badge: Badge }) {
           onSelect={setFormat}
         />
       </div>
-      <div className="mt-2 flex items-center gap-2 rounded-2xl bg-well py-2 pr-2 pl-4 shadow-[inset_0_1px_0_rgb(255_255_255/0.08)]">
-        <code className="min-w-0 flex-1 truncate font-mono text-[13px] text-ink/85">
+      <div className="mt-2 flex items-center gap-2 rounded-2xl bg-night/5 dark:bg-black/40 py-2 pr-2 pl-4 shadow-[inset_0_1px_0_rgb(255_255_255/0.08)]">
+        <code className="min-w-0 flex-1 truncate font-mono text-[13px] text-night/85 dark:text-white/85">
           {text}
         </code>
         <button
@@ -133,7 +135,7 @@ export function BadgesPage() {
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="font-bold text-4xl tracking-tight">Badges</h1>
-          <p className="mt-1 text-muted">
+          <p className="mt-1 text-night/60 dark:text-white/60">
             Embed your GitToken in a README or a website. They update every day.
           </p>
         </div>
@@ -144,12 +146,12 @@ export function BadgesPage() {
             <img
               src={`https://avatars.githubusercontent.com/${encodeURIComponent(login)}?size=64`}
               alt=""
-              className="size-8 rounded-full ring-1 ring-ink/30"
+              className="size-8 rounded-full ring-1 ring-night/30 dark:ring-white/30"
             />
             <span className="font-medium">{login}</span>
             <Link
               to="/badges"
-              className="rounded-full bg-ink/10 px-3 py-1.5 text-sm text-ink/80 hover:bg-ink/20 hover:text-ink"
+              className="rounded-full bg-night/10 dark:bg-white/10 px-3 py-1.5 text-sm text-night/80 dark:text-white/80 hover:bg-night/20 dark:hover:bg-white/20 hover:text-night dark:hover:text-white"
             >
               Change
             </Link>
