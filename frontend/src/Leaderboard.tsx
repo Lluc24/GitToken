@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import { useLeaderboard } from "./api";
 import { formatTokens } from "./format";
 import { glassClassName } from "./glass";
@@ -44,12 +45,12 @@ export function Leaderboard() {
                 alt=""
                 className="size-8 rounded-full ring-1 ring-white/30"
               />
-              <a
-                href={`https://github.com/${encodeURIComponent(profile.login)}`}
+              <Link
+                to={`/${encodeURIComponent(profile.login)}`}
                 className="min-w-0 flex-1 truncate font-medium hover:text-cyan-200"
               >
                 {profile.login}
-              </a>
+              </Link>
               <span className="font-mono text-sm">
                 {formatTokens(profile.total_tokens)}
               </span>
