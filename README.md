@@ -26,6 +26,17 @@ flowchart LR
 2. Keep the main-branch commits that have a coding agent among their authors or co-authors.
 3. Tokens = lines added by those commits × 3,000 (a first guess).
 
+The same data is drawn as SVG cards from Jinja templates, for the site and for READMEs. Add `?theme=light` for the light variant (dark by default); the badges page at `/badges` gives a README snippet that follows the reader's GitHub theme.
+
+| Route | What |
+| --- | --- |
+| `GET /v1/users/{login}` | Total and per-agent tokens, rarity |
+| `GET /v1/badges/{login}/profile.svg` | Profile card with the GitHub avatar inlined |
+| `GET /v1/badges/{login}.svg` | Card without the photo |
+| `GET /v1/leaderboard` | Profiles scanned in the last day |
+
+Profiles and cards are cached by the CDN for a day, matching the Supabase cache.
+
 ```
 make setup     # install everything, enable the pre-commit hook
 FASTAPI_ENV=development GITHUB_TOKEN=$(gh auth token) uv run uvicorn gittoken.api:app   # API on :8000
@@ -46,7 +57,8 @@ Deployed on Vercel as one project: the FastAPI app also serves the built page. `
 | `backend/src/gittoken/github.py` | GitHub GraphQL queries | Marc |
 | `backend/src/gittoken/db.py` | Supabase profile cache | Lluc |
 | `backend/src/gittoken/api.py` | FastAPI app and the `/v1` routes | Lluc |
-| `frontend/` | React page that calls the endpoint | Lluc |
+| `backend/src/gittoken/badge.py`, `templates/` | SVG cards: Jinja templates, palette, agent logos | Lluc |
+| `frontend/` | React site: search, profile card, badges, leaderboard | Lluc |
 | `infra/`, `supabase/`, `.github/` | AWS (not started), database and CI/CD | Marc |
 
 ## Rules
@@ -57,6 +69,6 @@ We start in the simplest shape that works and add structure when concrete code n
 
 - **Better estimate**: calibrate the formula on real agent logs; show a range.
 - **Scale**: several GitHub tokens, then a queue and workers if a profile is too slow to compute in one request.
-- **Launch**: embeddable SVG/PNG card and leaderboard (in review), then deployment.
+- **Launch**: link previews showing the card, a placeholder card while a first scan runs, then deployment.
 
 The long-term design is in the [architecture proposal](https://claude.ai/code/artifact/953dfeaf-4523-4951-aa18-eed07d207661).

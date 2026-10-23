@@ -26,6 +26,8 @@ from gittoken.github import fetch_avatar, fetch_github_profile
 from gittoken.telemetry import configure_tracing, tracer
 
 _GITHUB_LOGIN_PATTERN = "^[A-Za-z0-9][A-Za-z0-9-]{0,38}$"
+# Profiles are rescanned at most daily, so the CDN may keep these responses for a day.
+_DAILY_CACHE_CONTROL = "public, max-age=0, s-maxage=86400, stale-while-revalidate=3600"
 
 
 class ApiSettings(BaseSettings):
@@ -134,9 +136,7 @@ def create_app() -> FastAPI:
             cache_hit=cache_hit,
             duration_seconds=perf_counter() - started_at,
         ).info("Profile lookup completed")
-        response.headers["Cache-Control"] = (
-            "public, max-age=0, s-maxage=3600, stale-while-revalidate=3600"
-        )
+        response.headers["Cache-Control"] = _DAILY_CACHE_CONTROL
         return ProfileTokensResponse(
             login=profile.login,
             total_tokens=profile.total_tokens,
@@ -154,7 +154,7 @@ def create_app() -> FastAPI:
             render_badge(_profile_stats(profile), theme),
             media_type="image/svg+xml",
             headers={
-                "Cache-Control": "public, max-age=0, s-maxage=3600, stale-while-revalidate=3600",
+                "Cache-Control": _DAILY_CACHE_CONTROL,
                 "X-Content-Type-Options": "nosniff",
             },
         )
@@ -177,7 +177,7 @@ def create_app() -> FastAPI:
             render_profile_card(_profile_stats(profile), avatar, theme),
             media_type="image/svg+xml",
             headers={
-                "Cache-Control": "public, max-age=0, s-maxage=3600, stale-while-revalidate=3600",
+                "Cache-Control": _DAILY_CACHE_CONTROL,
                 "X-Content-Type-Options": "nosniff",
             },
         )
