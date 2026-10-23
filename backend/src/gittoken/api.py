@@ -1,17 +1,25 @@
+import asyncio
 import logging
 import sys
+from collections.abc import Callable, Coroutine
 from time import perf_counter
 from typing import Annotated
 
 import httpx
 import sentry_sdk
-from fastapi import FastAPI, HTTPException, Path, Response, status
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Path, Response, status
 from loguru import logger
 from pydantic import BaseModel, SecretStr
 from pydantic_settings import BaseSettings
 from sentry_sdk.integrations.loguru import LoguruIntegration
 
-from gittoken.badge import ProfileStats, Theme, render_badge, render_profile_card
+from gittoken.badge import (
+    ProfileStats,
+    Theme,
+    render_badge,
+    render_profile_card,
+    render_scanning_card,
+)
 from gittoken.db import LeaderboardEntry, fetch_cached_profile, fetch_leaderboard, save_profile
 from gittoken.domain import (
     MIN_TOKENS_BY_RARITY,
@@ -28,6 +36,9 @@ from gittoken.telemetry import configure_tracing, tracer
 _GITHUB_LOGIN_PATTERN = "^[A-Za-z0-9][A-Za-z0-9-]{0,38}$"
 # Profiles are rescanned at most daily, so the CDN may keep these responses for a day.
 _DAILY_CACHE_CONTROL = "public, max-age=0, s-maxage=86400, stale-while-revalidate=3600"
+# GitHub's image proxy gives up after a few seconds, so a slower first scan answers with a placeholder.
+_BADGE_LOOKUP_WAIT_SECONDS = 3
+_SCANNING_CACHE_CONTROL = "public, max-age=0, s-maxage=60"
 
 
 class ApiSettings(BaseSettings):
@@ -62,6 +73,38 @@ def _profile_stats(profile: ProfileTokensResponse) -> ProfileStats:
         tokens_by_agent=profile.tokens_by_agent,
         rarity=profile.rarity,
     )
+
+
+def _svg_response(svg: str, cache_control: str) -> Response:
+    return Response(
+        svg,
+        media_type="image/svg+xml",
+        headers={"Cache-Control": cache_control, "X-Content-Type-Options": "nosniff"},
+    )
+
+
+async def _finish_lookup(lookup: asyncio.Task[ProfileTokensResponse]) -> None:
+    await lookup
+
+
+# Badge requests for the same login share one lookup, so a page showing two badges scans once.
+_badge_lookups: dict[str, asyncio.Task[ProfileTokensResponse]] = {}
+
+
+async def _lookup_within_badge_wait(
+    login: str,
+    lookup_profile: Callable[[], Coroutine[object, object, ProfileTokensResponse]],
+    background_tasks: BackgroundTasks,
+) -> asyncio.Task[ProfileTokensResponse]:
+    """Post: a finished lookup, or one that keeps running after the response is sent."""
+    if login not in _badge_lookups:
+        _badge_lookups[login] = asyncio.create_task(lookup_profile())
+        _badge_lookups[login].add_done_callback(lambda _: _badge_lookups.pop(login))
+    lookup = _badge_lookups[login]
+    await asyncio.wait({lookup}, timeout=_BADGE_LOOKUP_WAIT_SECONDS)
+    if not lookup.done():
+        background_tasks.add_task(_finish_lookup, lookup)
+    return lookup
 
 
 def create_app() -> FastAPI:
@@ -147,40 +190,41 @@ def create_app() -> FastAPI:
     @app.get("/v1/badges/{login}.svg")
     async def get_badge(
         login: Annotated[VerifiedGithubUsername, Path(pattern=_GITHUB_LOGIN_PATTERN)],
+        background_tasks: BackgroundTasks,
         theme: Theme = Theme.DARK,
     ) -> Response:
-        profile = await get_user_tokens(login, Response())
-        return Response(
-            render_badge(_profile_stats(profile), theme),
-            media_type="image/svg+xml",
-            headers={
-                "Cache-Control": _DAILY_CACHE_CONTROL,
-                "X-Content-Type-Options": "nosniff",
-            },
+        lookup = await _lookup_within_badge_wait(
+            login, lambda: get_user_tokens(login, Response()), background_tasks
         )
+        if lookup.done():
+            return _svg_response(
+                render_badge(_profile_stats(lookup.result()), theme), _DAILY_CACHE_CONTROL
+            )
+        return _svg_response(render_scanning_card(login, theme), _SCANNING_CACHE_CONTROL)
 
     @app.get("/v1/badges/{login}/profile.svg")
     async def get_profile_card(
         login: Annotated[VerifiedGithubUsername, Path(pattern=_GITHUB_LOGIN_PATTERN)],
+        background_tasks: BackgroundTasks,
         theme: Theme = Theme.DARK,
     ) -> Response:
-        profile = await get_user_tokens(login, Response())
-        try:
-            avatar = await fetch_avatar(login)
-        except (httpx.HTTPError, GithubRequestError) as error:
-            raise HTTPException(
-                status.HTTP_502_BAD_GATEWAY,
-                "Avatar unavailable",
-                headers={"Cache-Control": "no-store"},
-            ) from error
-        return Response(
-            render_profile_card(_profile_stats(profile), avatar, theme),
-            media_type="image/svg+xml",
-            headers={
-                "Cache-Control": _DAILY_CACHE_CONTROL,
-                "X-Content-Type-Options": "nosniff",
-            },
+        lookup = await _lookup_within_badge_wait(
+            login, lambda: get_user_tokens(login, Response()), background_tasks
         )
+        if lookup.done():
+            profile = lookup.result()
+            try:
+                avatar = await fetch_avatar(login)
+            except (httpx.HTTPError, GithubRequestError) as error:
+                raise HTTPException(
+                    status.HTTP_502_BAD_GATEWAY,
+                    "Avatar unavailable",
+                    headers={"Cache-Control": "no-store"},
+                ) from error
+            return _svg_response(
+                render_profile_card(_profile_stats(profile), avatar, theme), _DAILY_CACHE_CONTROL
+            )
+        return _svg_response(render_scanning_card(login, theme), _SCANNING_CACHE_CONTROL)
 
     @app.get("/v1/leaderboard")
     async def get_leaderboard(response: Response) -> list[LeaderboardEntry]:

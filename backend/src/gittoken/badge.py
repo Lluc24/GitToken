@@ -52,6 +52,7 @@ _environment = Environment(
 _environment.filters["compact_tokens"] = _format_tokens
 _badge_template = _environment.get_template("badge.svg.jinja")
 _profile_template = _environment.get_template("profile.svg.jinja")
+_scanning_template = _environment.get_template("scanning.svg.jinja")
 
 
 def _row(mark: str, name: str, tokens: int, total_tokens: int) -> _Row:
@@ -103,3 +104,8 @@ def render_profile_card(stats: ProfileStats, avatar: Avatar, theme: Theme) -> st
         description=f"{description}. {agents}." if rows else f"{description}.",
         avatar_url=_avatar_data_url(avatar),
     )
+
+
+def render_scanning_card(login: str, theme: Theme) -> str:
+    """Post: a placeholder shown while the first scan of a profile is still running."""
+    return _scanning_template.render(login=login, theme=theme)
