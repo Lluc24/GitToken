@@ -66,7 +66,17 @@ async function fetchLeaderboard() {
   const response = await fetch("/v1/leaderboard");
   if (!response.ok)
     throw new Error("The leaderboard is unavailable right now.");
-  return leaderboardResponse.parse(await response.json());
+  let rawBody: unknown;
+  try {
+    rawBody = await response.json();
+  } catch {
+    throw new Error("The leaderboard returned an unreadable response");
+  }
+  const parsed = leaderboardResponse.safeParse(rawBody);
+  if (!parsed.success) {
+    throw new Error("The leaderboard returned an unexpected response");
+  }
+  return parsed.data;
 }
 
 export function useLeaderboard() {
