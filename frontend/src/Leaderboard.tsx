@@ -1,5 +1,10 @@
 import { Link } from "react-router-dom";
-import { useLeaderboard } from "./api";
+import {
+  type Rarity,
+  type RarityThreshold,
+  useLeaderboard,
+  useRarities,
+} from "./api";
 import { formatTokens } from "./format";
 import { glassClassName } from "./glass";
 
@@ -9,8 +14,35 @@ const medalClassNames = [
   "bg-gradient-to-br from-orange-300 to-orange-700 text-night",
 ];
 
+const rarityClassNames: Record<Rarity, string> = {
+  common: "text-sky-600 dark:text-sky-300",
+  rare: "text-orange-600 dark:text-orange-300",
+  epic: "text-violet-600 dark:text-violet-300",
+  legendary: "text-cyan-600 dark:text-cyan-300",
+  champion: "text-amber-600 dark:text-amber-300",
+};
+
+function rarityFor(
+  totalTokens: number,
+  thresholds: RarityThreshold[],
+): Rarity {
+  let result: Rarity = "common";
+  let bestMin = 0;
+  for (const threshold of thresholds) {
+    if (
+      totalTokens >= threshold.min_tokens &&
+      threshold.min_tokens >= bestMin
+    ) {
+      bestMin = threshold.min_tokens;
+      result = threshold.rarity;
+    }
+  }
+  return result;
+}
+
 export function Leaderboard() {
   const result = useLeaderboard();
+  const rarities = useRarities();
   return (
     <section className={`w-full rounded-[32px] p-6 ${glassClassName}`}>
       <h1 className="font-bold text-3xl tracking-tight">Leaderboard</h1>
@@ -51,6 +83,13 @@ export function Leaderboard() {
               >
                 {profile.login}
               </Link>
+              {rarities.isSuccess && (
+                <span
+                  className={`font-medium text-xs ${rarityClassNames[rarityFor(profile.total_tokens, rarities.data)]}`}
+                >
+                  {rarityFor(profile.total_tokens, rarities.data)}
+                </span>
+              )}
               <span className="font-mono text-sm">
                 {formatTokens(profile.total_tokens)}
               </span>
