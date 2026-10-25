@@ -22,10 +22,7 @@ const rarityClassNames: Record<Rarity, string> = {
   champion: "text-amber-600 dark:text-amber-300",
 };
 
-function rarityFor(
-  totalTokens: number,
-  thresholds: RarityThreshold[],
-): Rarity {
+function rarityFor(totalTokens: number, thresholds: RarityThreshold[]): Rarity {
   let result: Rarity = "common";
   let bestMin = 0;
   for (const threshold of thresholds) {
