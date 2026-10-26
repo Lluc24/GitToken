@@ -64,6 +64,7 @@ function ProfilePage() {
         GitToken
       </h1>
       <LoginForm
+        key={submittedLogin}
         initialLogin={submittedLogin}
         submitLabel="Estimate"
         onSubmitLogin={(login) =>
