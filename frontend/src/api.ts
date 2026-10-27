@@ -86,3 +86,35 @@ export function useLeaderboard() {
     retry: false,
   });
 }
+
+const rarityThreshold = z.object({ rarity, min_tokens: z.number() });
+
+export type RarityThreshold = z.infer<typeof rarityThreshold>;
+
+const raritiesResponse = z.array(rarityThreshold);
+
+async function fetchRarities(): Promise<RarityThreshold[]> {
+  const response = await fetch("/v1/rarities");
+  if (!response.ok) {
+    throw new Error("The rarity list is unavailable right now.");
+  }
+  let rawBody: unknown;
+  try {
+    rawBody = await response.json();
+  } catch {
+    throw new Error("The rarity list returned an unreadable response");
+  }
+  const parsed = raritiesResponse.safeParse(rawBody);
+  if (!parsed.success) {
+    throw new Error("The rarity list returned an unexpected response");
+  }
+  return parsed.data;
+}
+
+export function useRarities() {
+  return useQuery({
+    queryKey: ["rarities"],
+    queryFn: fetchRarities,
+    retry: false,
+  });
+}
