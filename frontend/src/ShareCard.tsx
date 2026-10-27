@@ -109,7 +109,7 @@ export function ShareCard({ login, totalTokens }: ShareCardProps) {
       </button>
       <Link
         to={`/${encodeURIComponent(login)}/badges`}
-        className="text-night/60 dark:text-white/60 text-sm hover:text-night dark:hover:text-white"
+        className="py-2 text-night/60 dark:text-white/60 text-sm hover:text-night dark:hover:text-white"
       >
         Add it to your README
       </Link>
