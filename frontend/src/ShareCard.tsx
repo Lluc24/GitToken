@@ -37,11 +37,17 @@ export function ShareCard({ login, totalTokens }: ShareCardProps) {
   // Safari only opens the share sheet right after a click, so the image is ready before it.
   useEffect(() => {
     let isCurrent = true;
-    renderCardPng(login, theme).then((file) => {
-      if (isCurrent) {
-        setCardFile(file);
-      }
-    });
+    renderCardPng(login, theme)
+      .then((file) => {
+        if (isCurrent) {
+          setCardFile(file);
+        }
+      })
+      .catch(() => {
+        if (isCurrent) {
+          setCardFile(null);
+        }
+      });
     return () => {
       isCurrent = false;
     };
@@ -63,12 +69,16 @@ export function ShareCard({ login, totalTokens }: ShareCardProps) {
       } catch (error) {
         // The user closing the share sheet is not a failure.
         if (!(error instanceof DOMException && error.name === "AbortError")) {
-          throw error;
+          setStatus("Sharing did not work this time");
         }
       }
     } else {
-      await navigator.clipboard.writeText(profileUrl);
-      setStatus("Link copied");
+      try {
+        await navigator.clipboard.writeText(profileUrl);
+        setStatus("Link copied");
+      } catch {
+        setStatus(`Copy this link: ${profileUrl}`);
+      }
     }
   }
 
