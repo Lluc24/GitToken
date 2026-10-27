@@ -79,7 +79,7 @@ function ProfilePage() {
 export function App() {
   return (
     <BrowserRouter>
-      <div className="relative min-h-screen overflow-hidden">
+      <div className="relative min-h-screen overflow-clip">
         <div aria-hidden="true" className="fixed inset-0 -z-10">
           <div className="absolute animate-drift rounded-full opacity-55 blur-[90px] motion-reduce:animate-none top-[-10%] left-[-10%] size-[55vmax] bg-cyan-300 dark:bg-cyan-500" />
           <div className="absolute animate-drift rounded-full opacity-55 blur-[90px] motion-reduce:animate-none top-[20%] right-[-15%] size-[50vmax] bg-violet-300 dark:bg-violet-600 [animation-delay:-6s]" />
