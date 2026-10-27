@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   BrowserRouter,
   Link,
@@ -55,9 +55,15 @@ function ProfileTokensResult({ login }: { login: string }) {
   );
 }
 
-function ProfilePage() {
+function ProfilePage({
+  onViewLogin,
+}: {
+  onViewLogin: (login: string) => void;
+}) {
   const { login: submittedLogin = "" } = useParams();
   const navigate = useNavigate();
+
+  useEffect(() => onViewLogin(submittedLogin), [onViewLogin, submittedLogin]);
 
   return (
     <main className="mx-auto flex max-w-xl flex-col items-center gap-8 px-4 py-12">
@@ -79,6 +85,9 @@ function ProfilePage() {
 
 export function App() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [lastLogin, setLastLogin] = useState("");
+  const lastProfilePath =
+    lastLogin === "" ? "/" : `/${encodeURIComponent(lastLogin)}`;
 
   return (
     <BrowserRouter>
@@ -92,7 +101,7 @@ export function App() {
           className={`sticky top-4 z-10 mx-auto mt-4 flex w-[calc(100%-2rem)] max-w-3xl flex-wrap items-center justify-between gap-x-1 py-2 pr-2 pl-4 ${isMenuOpen ? "rounded-[28px] sm:rounded-full" : "rounded-full"} ${glassClassName}`}
         >
           <Link
-            to="/"
+            to={lastProfilePath}
             className="flex items-center gap-2.5 font-bold text-lg tracking-tight"
             onClick={() => setIsMenuOpen(false)}
           >
@@ -133,7 +142,11 @@ export function App() {
               Leaderboard
             </Link>
             <Link
-              to="/badges"
+              to={
+                lastLogin === ""
+                  ? "/badges"
+                  : `/${encodeURIComponent(lastLogin)}/badges`
+              }
               className={`rounded-full px-4 py-2 text-night/80 dark:text-white/80 hover:bg-night/15 dark:hover:bg-white/15 hover:text-night dark:hover:text-white ${pressableClassName}`}
               onClick={() => setIsMenuOpen(false)}
             >
@@ -177,10 +190,22 @@ export function App() {
           </div>
         </header>
         <Routes>
-          <Route path="/" element={<ProfilePage />} />
-          <Route path="/:login" element={<ProfilePage />} />
-          <Route path="/badges" element={<BadgesPage />} />
-          <Route path="/:login/badges" element={<BadgesPage />} />
+          <Route
+            path="/"
+            element={<ProfilePage onViewLogin={setLastLogin} />}
+          />
+          <Route
+            path="/:login"
+            element={<ProfilePage onViewLogin={setLastLogin} />}
+          />
+          <Route
+            path="/badges"
+            element={<BadgesPage onViewLogin={setLastLogin} />}
+          />
+          <Route
+            path="/:login/badges"
+            element={<BadgesPage onViewLogin={setLastLogin} />}
+          />
           <Route
             path="/leaderboard"
             element={
