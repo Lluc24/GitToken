@@ -56,18 +56,48 @@ async def fetch_cached_profile(
 
 
 async def save_profile(supabase_url: str, secret_key: str, profile: GithubProfile) -> None:
-    async with httpx.AsyncClient(timeout=_TIMEOUT_SECONDS) as http_client:
-        response = await http_client.post(
-            f"{supabase_url.rstrip('/')}/rest/v1/rpc/save_github_user",
-            headers={"apikey": secret_key},
-            json={
-                "user_github_id": profile.github_id,
-                "user_login": profile.login.lower(),
-                "user_total_tokens": profile.total_tokens,
-                "lines_added_by_agent": profile.lines_added_by_agent,
+    rest_url = f"{supabase_url.rstrip('/')}/rest/v1"
+    lines_added_by_agent = profile.lines_added_by_agent
+    async with httpx.AsyncClient(
+        timeout=_TIMEOUT_SECONDS, headers={"apikey": secret_key}
+    ) as http_client:
+        renamed_user_response = await http_client.delete(
+            f"{rest_url}/users",
+            params={
+                "login": f"eq.{profile.login.lower()}",
+                "github_id": f"neq.{profile.github_id}",
             },
         )
-    response.raise_for_status()
+        renamed_user_response.raise_for_status()
+        user_response = await http_client.post(
+            f"{rest_url}/users",
+            params={"on_conflict": "github_id"},
+            headers={"Prefer": "resolution=merge-duplicates"},
+            json={
+                "github_id": profile.github_id,
+                "login": profile.login.lower(),
+                "fetched_at": datetime.now(UTC).isoformat(),
+                "total_tokens": profile.total_tokens,
+            },
+        )
+        user_response.raise_for_status()
+        stale_user_agents_filters = {"github_id": f"eq.{profile.github_id}"}
+        if lines_added_by_agent:
+            stale_user_agents_filters["agent_id"] = f"not.in.({','.join(lines_added_by_agent)})"
+            user_agents_response = await http_client.post(
+                f"{rest_url}/user_agents",
+                params={"on_conflict": "github_id,agent_id"},
+                headers={"Prefer": "resolution=merge-duplicates"},
+                json=[
+                    {"github_id": profile.github_id, "agent_id": agent, "lines_added": lines_added}
+                    for agent, lines_added in lines_added_by_agent.items()
+                ],
+            )
+            user_agents_response.raise_for_status()
+        stale_user_agents_response = await http_client.delete(
+            f"{rest_url}/user_agents", params=stale_user_agents_filters
+        )
+        stale_user_agents_response.raise_for_status()
 
 
 class LeaderboardEntry(BaseModel):
