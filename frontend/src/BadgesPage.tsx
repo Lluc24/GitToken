@@ -57,7 +57,7 @@ function SegmentedControl<Option extends string>({
           type="button"
           aria-pressed={option === selected}
           onClick={() => onSelect(option)}
-          className={`rounded-full px-3 py-1 transition-colors ${option === selected ? "bg-night dark:bg-white font-medium text-white dark:text-night" : "text-night/70 dark:text-white/70 hover:text-night dark:hover:text-white"}`}
+          className={`rounded-full px-3 py-2 transition-colors sm:py-1 ${option === selected ? "bg-night dark:bg-white font-medium text-white dark:text-night" : "text-night/70 dark:text-white/70 hover:text-night dark:hover:text-white"}`}
         >
           {option}
         </button>
@@ -80,7 +80,7 @@ function BadgeSection({ login, badge }: { login: string; badge: Badge }) {
   return (
     <section
       aria-labelledby={`badge-${badge.name}`}
-      className={`rounded-[32px] p-5 ${glassClassName}`}
+      className={`rounded-[32px] p-4 sm:p-5 ${glassClassName}`}
     >
       <div className="px-1">
         <h2
@@ -114,7 +114,7 @@ function BadgeSection({ login, badge }: { login: string; badge: Badge }) {
         <button
           type="button"
           onClick={copySnippet}
-          className={`shrink-0 rounded-full bg-gradient-to-br from-cyan-300 via-violet-400 to-fuchsia-400 px-4 py-1.5 font-semibold text-night text-sm ${pressableClassName}`}
+          className={`shrink-0 rounded-full bg-gradient-to-br from-cyan-300 via-violet-400 to-fuchsia-400 px-4 py-2 font-semibold sm:py-1.5 text-night text-sm ${pressableClassName}`}
         >
           {copiedFormat === format ? "Copied ✓" : "Copy"}
         </button>
@@ -151,17 +151,17 @@ export function BadgesPage({
         </div>
         {login !== "" && (
           <div
-            className={`flex items-center gap-2 rounded-full p-1 ${glassClassName}`}
+            className={`flex max-w-full items-center gap-2 rounded-full p-1 ${glassClassName}`}
           >
             <img
               src={`https://avatars.githubusercontent.com/${encodeURIComponent(login)}?size=64`}
               alt=""
-              className="size-8 rounded-full ring-1 ring-night/30 dark:ring-white/30"
+              className="size-8 shrink-0 rounded-full ring-1 ring-night/30 dark:ring-white/30"
             />
-            <span className="font-medium">{login}</span>
+            <span className="min-w-0 truncate font-medium">{login}</span>
             <Link
               to="/badges"
-              className="rounded-full bg-night/10 dark:bg-white/10 px-3 py-1.5 text-sm text-night/80 dark:text-white/80 hover:bg-night/20 dark:hover:bg-white/20 hover:text-night dark:hover:text-white"
+              className="shrink-0 rounded-full bg-night/10 dark:bg-white/10 px-3 py-2 text-sm sm:py-1.5 text-night/80 dark:text-white/80 hover:bg-night/20 dark:hover:bg-white/20 hover:text-night dark:hover:text-white"
             >
               Change
             </Link>

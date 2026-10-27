@@ -20,7 +20,7 @@ export function ThemeToggle() {
           aria-label={`${theme} theme`}
           aria-pressed={theme === selectedTheme}
           onClick={() => setTheme(theme)}
-          className={`flex size-8 items-center justify-center rounded-full transition-colors ${theme === selectedTheme ? "bg-night dark:bg-white text-white dark:text-night" : "text-night/60 dark:text-white/60 hover:text-night dark:hover:text-white"}`}
+          className={`flex size-9 items-center justify-center rounded-full transition-colors sm:size-8 ${theme === selectedTheme ? "bg-night dark:bg-white text-white dark:text-night" : "text-night/60 dark:text-white/60 hover:text-night dark:hover:text-white"}`}
         >
           <svg
             viewBox="0 0 24 24"
