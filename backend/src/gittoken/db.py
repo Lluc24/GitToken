@@ -63,7 +63,6 @@ async def save_profile(supabase_url: str, secret_key: str, profile: GithubProfil
             json={
                 "user_github_id": profile.github_id,
                 "user_login": profile.login.lower(),
-                "user_total_tokens": profile.total_tokens,
                 "lines_added_by_agent": profile.lines_added_by_agent,
             },
         )
@@ -76,14 +75,12 @@ class LeaderboardEntry(BaseModel):
 
 
 async def fetch_leaderboard(supabase_url: str, secret_key: str) -> list[LeaderboardEntry]:
-    fresh_since = datetime.now(UTC) - _USER_TTL
     async with httpx.AsyncClient(timeout=_TIMEOUT_SECONDS) as http_client:
         response = await http_client.get(
-            f"{supabase_url.rstrip('/')}/rest/v1/users",
+            f"{supabase_url.rstrip('/')}/rest/v1/token_leaderboard",
             headers={"apikey": secret_key},
             params={
                 "select": "login,total_tokens",
-                "fetched_at": f"gte.{fresh_since.isoformat()}",
                 "order": "total_tokens.desc,login.asc",
                 "limit": "50",
             },
