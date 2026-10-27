@@ -29,7 +29,7 @@ export function LoginForm({
         <input
           value={typedLogin}
           onChange={(event) => setTypedLogin(event.target.value)}
-          placeholder="GitHub username"
+          placeholder="GitHub user"
           autoCapitalize="none"
           autoCorrect="off"
           spellCheck={false}
