@@ -21,7 +21,13 @@ from gittoken.badge import (
     render_profile_card,
     render_scanning_card,
 )
-from gittoken.db import LeaderboardEntry, fetch_cached_profile, fetch_leaderboard, save_profile
+from gittoken.db import (
+    LeaderboardEntry,
+    delete_renamed_user,
+    fetch_cached_profile,
+    fetch_leaderboard,
+    save_profile,
+)
 from gittoken.domain import (
     MIN_TOKENS_BY_RARITY,
     NAME_BY_AGENT,
@@ -154,6 +160,7 @@ async def lookup_profile(settings: ApiSettings, login: VerifiedGithubUsername) -
             with tracer.start_as_current_span(
                 "profile.persist", record_exception=False, set_status_on_exception=False
             ):
+                await delete_renamed_user(settings.supabase_url, supabase_secret_key, profile)
                 await save_profile(settings.supabase_url, supabase_secret_key, profile)
     except ProfileNotFoundError:
         logger.bind(event="profile_not_found", duration_seconds=perf_counter() - started_at).info(
