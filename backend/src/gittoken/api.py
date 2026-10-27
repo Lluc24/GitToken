@@ -2,6 +2,7 @@ import asyncio
 import logging
 import sys
 from collections.abc import Awaitable, Callable, Coroutine
+from datetime import UTC, datetime
 from time import perf_counter
 from typing import Annotated
 
@@ -143,12 +144,15 @@ async def _badge_response(
 
 async def lookup_profile(settings: ApiSettings, login: VerifiedGithubUsername) -> GithubProfile:
     started_at = perf_counter()
+    now = datetime.now(UTC)
     supabase_secret_key = settings.supabase_secret_key.get_secret_value()
     try:
         with tracer.start_as_current_span(
             "cache.supabase.read", record_exception=False, set_status_on_exception=False
         ):
-            profile = await fetch_cached_profile(settings.supabase_url, supabase_secret_key, login)
+            profile = await fetch_cached_profile(
+                settings.supabase_url, supabase_secret_key, login, now
+            )
         cache_hit = profile is not None
         if profile is None:
             with tracer.start_as_current_span(
@@ -161,7 +165,7 @@ async def lookup_profile(settings: ApiSettings, login: VerifiedGithubUsername) -
                 "profile.persist", record_exception=False, set_status_on_exception=False
             ):
                 await delete_renamed_user(settings.supabase_url, supabase_secret_key, profile)
-                await save_profile(settings.supabase_url, supabase_secret_key, profile)
+                await save_profile(settings.supabase_url, supabase_secret_key, profile, now)
     except ProfileNotFoundError:
         logger.bind(event="profile_not_found", duration_seconds=perf_counter() - started_at).info(
             "Profile lookup returned no user"
@@ -261,7 +265,9 @@ def create_app() -> FastAPI:
     async def get_leaderboard(response: Response) -> list[LeaderboardEntry]:
         try:
             entries = await fetch_leaderboard(
-                settings.supabase_url, settings.supabase_secret_key.get_secret_value()
+                settings.supabase_url,
+                settings.supabase_secret_key.get_secret_value(),
+                datetime.now(UTC),
             )
         except httpx.HTTPError as error:
             raise HTTPException(
