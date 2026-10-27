@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   BrowserRouter,
   Link,
@@ -77,6 +78,8 @@ function ProfilePage() {
 }
 
 export function App() {
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+
   return (
     <BrowserRouter>
       <div className="relative min-h-screen overflow-clip">
@@ -86,11 +89,12 @@ export function App() {
           <div className="absolute animate-drift rounded-full opacity-55 blur-[90px] motion-reduce:animate-none bottom-[-20%] left-[20%] size-[45vmax] bg-pink-300 dark:bg-fuchsia-500 [animation-delay:-12s]" />
         </div>
         <header
-          className={`sticky top-4 z-10 mx-auto mt-4 flex w-[calc(100%-2rem)] max-w-3xl items-center justify-between rounded-full py-2 pr-2 pl-4 ${glassClassName}`}
+          className={`sticky top-4 z-10 mx-auto mt-4 flex w-[calc(100%-2rem)] max-w-3xl flex-wrap items-center justify-between gap-x-1 py-2 pr-2 pl-4 ${isMenuOpen ? "rounded-[28px] sm:rounded-full" : "rounded-full"} ${glassClassName}`}
         >
           <Link
             to="/"
             className="flex items-center gap-2.5 font-bold text-lg tracking-tight"
+            onClick={() => setIsMenuOpen(false)}
           >
             <svg viewBox="0 0 32 32" className="size-8" aria-hidden="true">
               <defs>
@@ -117,16 +121,21 @@ export function App() {
             </svg>
             GitToken
           </Link>
-          <nav className="flex items-center gap-1 text-sm">
+          <nav
+            id="site-menu"
+            className={`flex items-center gap-1 text-sm max-sm:order-last max-sm:w-full max-sm:flex-col max-sm:items-stretch max-sm:pt-2 max-sm:pb-1 max-sm:text-base max-sm:*:py-3 sm:ml-auto ${isMenuOpen ? "" : "max-sm:hidden"}`}
+          >
             <Link
               to="/leaderboard"
               className={`rounded-full px-4 py-2 text-night/80 dark:text-white/80 hover:bg-night/15 dark:hover:bg-white/15 hover:text-night dark:hover:text-white ${pressableClassName}`}
+              onClick={() => setIsMenuOpen(false)}
             >
               Leaderboard
             </Link>
             <Link
               to="/badges"
               className={`rounded-full px-4 py-2 text-night/80 dark:text-white/80 hover:bg-night/15 dark:hover:bg-white/15 hover:text-night dark:hover:text-white ${pressableClassName}`}
+              onClick={() => setIsMenuOpen(false)}
             >
               Badges
             </Link>
@@ -136,8 +145,36 @@ export function App() {
             >
               GitHub
             </a>
-            <ThemeToggle />
           </nav>
+          <div className="flex items-center gap-1">
+            <ThemeToggle />
+            <button
+              type="button"
+              aria-expanded={isMenuOpen}
+              aria-controls="site-menu"
+              aria-label="Menu"
+              onClick={() => setIsMenuOpen(!isMenuOpen)}
+              className="flex size-10 items-center justify-center rounded-full text-night/80 hover:bg-night/15 hover:text-night sm:hidden dark:text-white/80 dark:hover:bg-white/15 dark:hover:text-white"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                className="size-5"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                aria-hidden="true"
+              >
+                <path
+                  d={
+                    isMenuOpen
+                      ? "M6 6l12 12M18 6 6 18"
+                      : "M4 7h16M4 12h16M4 17h16"
+                  }
+                />
+              </svg>
+            </button>
+          </div>
         </header>
         <Routes>
           <Route path="/" element={<ProfilePage />} />
