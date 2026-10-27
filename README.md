@@ -35,7 +35,7 @@ The same data is drawn as SVG cards from Jinja templates, for the site and for R
 | `GET /v1/badges/{login}.svg` | Card without the photo |
 | `GET /v1/leaderboard` | Profiles scanned in the last day |
 
-Profiles and cards are cached by the CDN for a day, matching the Supabase cache.
+Profiles and cards are cached by the CDN for a day, matching the Supabase cache. GitHub's image proxy gives up after a few seconds, so a card whose first scan takes longer answers with a "Scanning" placeholder for a minute while the scan finishes. Badge errors (unknown user, GitHub down) are drawn as a card with status 200 and cached for ten minutes, so a README never shows a broken image.
 
 ```
 make setup     # install everything, enable the pre-commit hook
@@ -69,6 +69,6 @@ We start in the simplest shape that works and add structure when concrete code n
 
 - **Better estimate**: calibrate the formula on real agent logs; show a range.
 - **Scale**: several GitHub tokens, then a queue and workers if a profile is too slow to compute in one request.
-- **Launch**: link previews showing the card, a placeholder card while a first scan runs, then deployment.
+- **Launch**: link previews showing the card, then deployment.
 
 The long-term design is in the [architecture proposal](https://claude.ai/code/artifact/953dfeaf-4523-4951-aa18-eed07d207661).
