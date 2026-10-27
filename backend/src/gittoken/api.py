@@ -2,8 +2,7 @@ import asyncio
 import logging
 import sys
 from collections.abc import Awaitable, Callable, Coroutine
-from datetime import UTC, datetime
-from time import perf_counter
+from functools import partial
 from typing import Annotated
 
 import httpx
@@ -14,6 +13,7 @@ from pydantic import BaseModel, SecretStr
 from pydantic_settings import BaseSettings
 from sentry_sdk.integrations.loguru import LoguruIntegration
 
+from gittoken.application import fetch_fresh_leaderboard, lookup_profile
 from gittoken.badge import (
     ProfileStats,
     Theme,
@@ -22,13 +22,7 @@ from gittoken.badge import (
     render_profile_card,
     render_scanning_card,
 )
-from gittoken.db import (
-    LeaderboardEntry,
-    delete_renamed_user,
-    fetch_cached_profile,
-    fetch_leaderboard,
-    save_profile,
-)
+from gittoken.db import LeaderboardEntry
 from gittoken.domain import (
     MIN_TOKENS_BY_RARITY,
     NAME_BY_AGENT,
@@ -39,8 +33,8 @@ from gittoken.domain import (
     Rarity,
     VerifiedGithubUsername,
 )
-from gittoken.github import fetch_avatar, fetch_github_profile
-from gittoken.telemetry import configure_tracing, tracer
+from gittoken.github import fetch_avatar
+from gittoken.telemetry import configure_tracing
 
 _GITHUB_LOGIN_PATTERN = "^[A-Za-z0-9][A-Za-z0-9-]{0,38}$"
 # Profiles are rescanned at most daily, so the CDN may keep these responses for a day.
@@ -142,50 +136,6 @@ async def _badge_response(
     return _svg_response(render_scanning_card(login, theme), _SCANNING_CACHE_CONTROL)
 
 
-async def lookup_profile(settings: ApiSettings, login: VerifiedGithubUsername) -> GithubProfile:
-    started_at = perf_counter()
-    now = datetime.now(UTC)
-    supabase_secret_key = settings.supabase_secret_key.get_secret_value()
-    try:
-        with tracer.start_as_current_span(
-            "cache.supabase.read", record_exception=False, set_status_on_exception=False
-        ):
-            profile = await fetch_cached_profile(
-                settings.supabase_url, supabase_secret_key, login, now
-            )
-        cache_hit = profile is not None
-        if profile is None:
-            with tracer.start_as_current_span(
-                "github.scan", record_exception=False, set_status_on_exception=False
-            ):
-                profile = await fetch_github_profile(
-                    settings.github_token.get_secret_value(), login
-                )
-            with tracer.start_as_current_span(
-                "profile.persist", record_exception=False, set_status_on_exception=False
-            ):
-                await delete_renamed_user(settings.supabase_url, supabase_secret_key, profile)
-                await save_profile(settings.supabase_url, supabase_secret_key, profile, now)
-    except ProfileNotFoundError:
-        logger.bind(event="profile_not_found", duration_seconds=perf_counter() - started_at).info(
-            "Profile lookup returned no user"
-        )
-        raise
-    except (httpx.HTTPError, GithubRequestError) as error:
-        logger.bind(
-            event="profile_upstream_error",
-            error_type=type(error).__name__,
-            duration_seconds=perf_counter() - started_at,
-        ).warning("Profile lookup failed")
-        raise
-    logger.bind(
-        event="profile_lookup",
-        cache_hit=cache_hit,
-        duration_seconds=perf_counter() - started_at,
-    ).info("Profile lookup completed")
-    return profile
-
-
 def create_app() -> FastAPI:
     settings = ApiSettings()
     logger.remove()
@@ -208,6 +158,12 @@ def create_app() -> FastAPI:
         )
     configure_tracing(settings.otel_exporter_otlp_endpoint)
     app = FastAPI(title="GitToken")
+    lookup_settings_profile = partial(
+        lookup_profile,
+        settings.github_token.get_secret_value(),
+        settings.supabase_url,
+        settings.supabase_secret_key.get_secret_value(),
+    )
 
     @app.get("/v1/users/{login}")
     async def get_user_tokens(
@@ -215,7 +171,7 @@ def create_app() -> FastAPI:
         response: Response,
     ) -> ProfileTokensResponse:
         try:
-            profile = await lookup_profile(settings, login)
+            profile = await lookup_settings_profile(login)
         except ProfileNotFoundError as error:
             raise HTTPException(
                 status.HTTP_404_NOT_FOUND, str(error), headers={"Cache-Control": "no-store"}
@@ -244,7 +200,11 @@ def create_app() -> FastAPI:
             return render_badge(_profile_stats(profile), theme)
 
         return await _badge_response(
-            login, theme, lambda: lookup_profile(settings, login), background_tasks, render_card
+            login,
+            theme,
+            lambda: lookup_settings_profile(login),
+            background_tasks,
+            render_card,
         )
 
     @app.get("/v1/badges/{login}/profile.svg")
@@ -258,16 +218,18 @@ def create_app() -> FastAPI:
             return render_profile_card(_profile_stats(profile), avatar, theme)
 
         return await _badge_response(
-            login, theme, lambda: lookup_profile(settings, login), background_tasks, render_card
+            login,
+            theme,
+            lambda: lookup_settings_profile(login),
+            background_tasks,
+            render_card,
         )
 
     @app.get("/v1/leaderboard")
     async def get_leaderboard(response: Response) -> list[LeaderboardEntry]:
         try:
-            entries = await fetch_leaderboard(
-                settings.supabase_url,
-                settings.supabase_secret_key.get_secret_value(),
-                datetime.now(UTC),
+            entries = await fetch_fresh_leaderboard(
+                settings.supabase_url, settings.supabase_secret_key.get_secret_value()
             )
         except httpx.HTTPError as error:
             raise HTTPException(
