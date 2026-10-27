@@ -26,7 +26,7 @@ from gittoken.domain import (
     MIN_TOKENS_BY_RARITY,
     NAME_BY_AGENT,
     Agent,
-    Avatar,
+    GithubProfile,
     GithubRequestError,
     ProfileNotFoundError,
     Rarity,
@@ -43,10 +43,6 @@ _BADGE_LOOKUP_WAIT_SECONDS = 3
 _SCANNING_CACHE_CONTROL = "public, max-age=0, s-maxage=60"
 # Badge errors are drawn as a card with status 200, as a broken image explains nothing in a README.
 _BADGE_ERROR_CACHE_CONTROL = "public, max-age=0, s-maxage=600"
-_BADGE_ERROR_MESSAGE_BY_STATUS = {
-    status.HTTP_404_NOT_FOUND: "No GitHub user with this name",
-    status.HTTP_502_BAD_GATEWAY: "GitHub is unavailable, retrying soon",
-}
 
 
 class ApiSettings(BaseSettings):
@@ -74,7 +70,7 @@ class RarityResponse(BaseModel):
     min_tokens: int
 
 
-def _profile_stats(profile: ProfileTokensResponse) -> ProfileStats:
+def _profile_stats(profile: GithubProfile) -> ProfileStats:
     return ProfileStats(
         login=profile.login,
         total_tokens=profile.total_tokens,
@@ -91,31 +87,23 @@ def _svg_response(svg: str, cache_control: str) -> Response:
     )
 
 
-def _badge_error_response(login: str, error: HTTPException, theme: Theme) -> Response:
-    message = _BADGE_ERROR_MESSAGE_BY_STATUS[error.status_code]
+def _badge_error_response(login: str, message: str, theme: Theme) -> Response:
     return _svg_response(render_error_card(login, message, theme), _BADGE_ERROR_CACHE_CONTROL)
 
 
-async def _fetch_avatar_or_502(login: VerifiedGithubUsername) -> Avatar:
-    try:
-        return await fetch_avatar(login)
-    except (httpx.HTTPError, GithubRequestError) as error:
-        raise HTTPException(status.HTTP_502_BAD_GATEWAY, "Avatar unavailable") from error
-
-
-async def _finish_lookup(lookup: asyncio.Task[ProfileTokensResponse]) -> None:
+async def _finish_lookup(lookup: asyncio.Task[GithubProfile]) -> None:
     await lookup
 
 
 # Badge requests for the same login share one lookup, so a page showing two badges scans once.
-_badge_lookups: dict[str, asyncio.Task[ProfileTokensResponse]] = {}
+_badge_lookups: dict[str, asyncio.Task[GithubProfile]] = {}
 
 
 async def _lookup_within_badge_wait(
     login: str,
-    lookup_profile: Callable[[], Coroutine[object, object, ProfileTokensResponse]],
+    lookup_profile: Callable[[], Coroutine[object, object, GithubProfile]],
     background_tasks: BackgroundTasks,
-) -> asyncio.Task[ProfileTokensResponse]:
+) -> asyncio.Task[GithubProfile]:
     """Post: a finished lookup, or one that keeps running after the response is sent."""
     if login not in _badge_lookups:
         _badge_lookups[login] = asyncio.create_task(lookup_profile())
@@ -130,19 +118,61 @@ async def _lookup_within_badge_wait(
 async def _badge_response(
     login: VerifiedGithubUsername,
     theme: Theme,
-    lookup_profile: Callable[[], Coroutine[object, object, ProfileTokensResponse]],
+    lookup_profile: Callable[[], Coroutine[object, object, GithubProfile]],
     background_tasks: BackgroundTasks,
-    render_card: Callable[[ProfileTokensResponse], Awaitable[str]],
+    render_card: Callable[[GithubProfile], Awaitable[str]],
 ) -> Response:
     """Post: the card, an error card, or a scanning placeholder; always an SVG a README can show."""
     lookup = await _lookup_within_badge_wait(login, lookup_profile, background_tasks)
     if lookup.done():
         try:
             svg = await render_card(lookup.result())
-        except HTTPException as error:
-            return _badge_error_response(login, error, theme)
+        except ProfileNotFoundError:
+            return _badge_error_response(login, "No GitHub user with this name", theme)
+        except (httpx.HTTPError, GithubRequestError):
+            return _badge_error_response(login, "GitHub is unavailable, retrying soon", theme)
         return _svg_response(svg, _DAILY_CACHE_CONTROL)
     return _svg_response(render_scanning_card(login, theme), _SCANNING_CACHE_CONTROL)
+
+
+async def lookup_profile(settings: ApiSettings, login: VerifiedGithubUsername) -> GithubProfile:
+    started_at = perf_counter()
+    supabase_secret_key = settings.supabase_secret_key.get_secret_value()
+    try:
+        with tracer.start_as_current_span(
+            "cache.supabase.read", record_exception=False, set_status_on_exception=False
+        ):
+            profile = await fetch_cached_profile(settings.supabase_url, supabase_secret_key, login)
+        cache_hit = profile is not None
+        if profile is None:
+            with tracer.start_as_current_span(
+                "github.scan", record_exception=False, set_status_on_exception=False
+            ):
+                profile = await fetch_github_profile(
+                    settings.github_token.get_secret_value(), login
+                )
+            with tracer.start_as_current_span(
+                "profile.persist", record_exception=False, set_status_on_exception=False
+            ):
+                await save_profile(settings.supabase_url, supabase_secret_key, profile)
+    except ProfileNotFoundError:
+        logger.bind(event="profile_not_found", duration_seconds=perf_counter() - started_at).info(
+            "Profile lookup returned no user"
+        )
+        raise
+    except (httpx.HTTPError, GithubRequestError) as error:
+        logger.bind(
+            event="profile_upstream_error",
+            error_type=type(error).__name__,
+            duration_seconds=perf_counter() - started_at,
+        ).warning("Profile lookup failed")
+        raise
+    logger.bind(
+        event="profile_lookup",
+        cache_hit=cache_hit,
+        duration_seconds=perf_counter() - started_at,
+    ).info("Profile lookup completed")
+    return profile
 
 
 def create_app() -> FastAPI:
@@ -173,50 +203,18 @@ def create_app() -> FastAPI:
         login: Annotated[VerifiedGithubUsername, Path(pattern=_GITHUB_LOGIN_PATTERN)],
         response: Response,
     ) -> ProfileTokensResponse:
-        started_at = perf_counter()
-        supabase_secret_key = settings.supabase_secret_key.get_secret_value()
         try:
-            with tracer.start_as_current_span(
-                "cache.supabase.read", record_exception=False, set_status_on_exception=False
-            ):
-                profile = await fetch_cached_profile(
-                    settings.supabase_url, supabase_secret_key, login
-                )
-            cache_hit = profile is not None
-            if profile is None:
-                with tracer.start_as_current_span(
-                    "github.scan", record_exception=False, set_status_on_exception=False
-                ):
-                    profile = await fetch_github_profile(
-                        settings.github_token.get_secret_value(), login
-                    )
-                with tracer.start_as_current_span(
-                    "profile.persist", record_exception=False, set_status_on_exception=False
-                ):
-                    await save_profile(settings.supabase_url, supabase_secret_key, profile)
+            profile = await lookup_profile(settings, login)
         except ProfileNotFoundError as error:
-            logger.bind(
-                event="profile_not_found", duration_seconds=perf_counter() - started_at
-            ).info("Profile lookup returned no user")
             raise HTTPException(
                 status.HTTP_404_NOT_FOUND, str(error), headers={"Cache-Control": "no-store"}
             ) from error
         except (httpx.HTTPError, GithubRequestError) as error:
-            logger.bind(
-                event="profile_upstream_error",
-                error_type=type(error).__name__,
-                duration_seconds=perf_counter() - started_at,
-            ).warning("Profile lookup failed")
             raise HTTPException(
                 status.HTTP_502_BAD_GATEWAY,
                 "Profile lookup unavailable",
                 headers={"Cache-Control": "no-store"},
             ) from error
-        logger.bind(
-            event="profile_lookup",
-            cache_hit=cache_hit,
-            duration_seconds=perf_counter() - started_at,
-        ).info("Profile lookup completed")
         response.headers["Cache-Control"] = _DAILY_CACHE_CONTROL
         return ProfileTokensResponse(
             login=profile.login,
@@ -231,11 +229,11 @@ def create_app() -> FastAPI:
         background_tasks: BackgroundTasks,
         theme: Theme = Theme.DARK,
     ) -> Response:
-        async def render_card(profile: ProfileTokensResponse) -> str:
+        async def render_card(profile: GithubProfile) -> str:
             return render_badge(_profile_stats(profile), theme)
 
         return await _badge_response(
-            login, theme, lambda: get_user_tokens(login, Response()), background_tasks, render_card
+            login, theme, lambda: lookup_profile(settings, login), background_tasks, render_card
         )
 
     @app.get("/v1/badges/{login}/profile.svg")
@@ -244,12 +242,12 @@ def create_app() -> FastAPI:
         background_tasks: BackgroundTasks,
         theme: Theme = Theme.DARK,
     ) -> Response:
-        async def render_card(profile: ProfileTokensResponse) -> str:
-            avatar = await _fetch_avatar_or_502(login)
+        async def render_card(profile: GithubProfile) -> str:
+            avatar = await fetch_avatar(login)
             return render_profile_card(_profile_stats(profile), avatar, theme)
 
         return await _badge_response(
-            login, theme, lambda: get_user_tokens(login, Response()), background_tasks, render_card
+            login, theme, lambda: lookup_profile(settings, login), background_tasks, render_card
         )
 
     @app.get("/v1/leaderboard")
