@@ -1,13 +1,14 @@
 import asyncio
-from itertools import chain
+from collections import Counter
 from json import JSONDecodeError
+from types import MappingProxyType
 from typing import Self
 
 import httpx
 from pydantic import BaseModel, Field, ValidationError, model_validator
 
 from gittoken.domain import (
-    AgenticCommit,
+    Agent,
     Avatar,
     GithubProfile,
     GithubRequestError,
@@ -154,10 +155,10 @@ async def _query(
     return result.data
 
 
-async def _fetch_repository_agentic_commits(
+async def _count_repository_lines_added_by_agent(
     http_client: httpx.AsyncClient, repository_id: str
-) -> list[AgenticCommit]:
-    agentic_commits: list[AgenticCommit] = []
+) -> Counter[Agent]:
+    lines_added_by_agent: Counter[Agent] = Counter()
     cursor: str | None = None
     seen_cursors: set[str] = set()
     while True:
@@ -167,14 +168,14 @@ async def _fetch_repository_agentic_commits(
         except ValidationError as error:
             raise GithubRequestError("GitHub returned invalid commit data") from error
         if data.node.default_branch is None:
-            return agentic_commits
+            return lines_added_by_agent
         history = data.node.default_branch.target.history
         for commit in history.nodes:
             agent = find_agent(author.email for author in commit.authors.nodes)
             if agent is not None:
-                agentic_commits.append(AgenticCommit(agent, commit.additions))
+                lines_added_by_agent[agent] += commit.additions
         if not history.page_info.has_next_page:
-            return agentic_commits
+            return lines_added_by_agent
         next_cursor = history.page_info.end_cursor
         if next_cursor is None or next_cursor in seen_cursors:
             raise GithubRequestError("GitHub returned an invalid commit pagination cursor")
@@ -218,25 +219,25 @@ async def _fetch_repositories(
         cursor = next_cursor
 
 
-async def _fetch_agentic_commits(
+async def _count_lines_added_by_agent(
     http_client: httpx.AsyncClient, repositories: list[_Repository]
-) -> tuple[AgenticCommit, ...]:
-    pending_repositories = iter(enumerate(repositories))
-    commits_by_repository: list[list[AgenticCommit]] = [[] for _ in repositories]
+) -> MappingProxyType[Agent, int]:
+    pending_repositories = iter(repositories)
+    lines_added_by_agent: Counter[Agent] = Counter()
 
-    async def fetch_next_repositories() -> None:
-        for index, repository in pending_repositories:
-            commits_by_repository[index] = await _fetch_repository_agentic_commits(
-                http_client, repository.id
+    async def count_next_repositories() -> None:
+        for repository in pending_repositories:
+            lines_added_by_agent.update(
+                await _count_repository_lines_added_by_agent(http_client, repository.id)
             )
 
     workers = [
-        asyncio.create_task(fetch_next_repositories())
+        asyncio.create_task(count_next_repositories())
         for _ in range(min(_MAXIMUM_CONNECTIONS, len(repositories)))
     ]
     try:
         await asyncio.gather(*workers)
-        return tuple(chain.from_iterable(commits_by_repository))
+        return MappingProxyType(dict(lines_added_by_agent))
     finally:
         for worker in workers:
             worker.cancel()
@@ -244,7 +245,7 @@ async def _fetch_agentic_commits(
 
 
 async def fetch_github_profile(token: str, login: VerifiedGithubUsername) -> GithubProfile:
-    """Post: all agentic commits since 2025 across public non-fork repositories,
+    """Post: lines added by each agent in commits since 2025 across public non-fork repositories,
     or ProfileNotFoundError. Incomplete GitHub responses raise GithubRequestError."""
     async with httpx.AsyncClient(
         headers={"Authorization": f"Bearer {token}"},
@@ -252,12 +253,10 @@ async def fetch_github_profile(token: str, login: VerifiedGithubUsername) -> Git
         limits=httpx.Limits(max_connections=_MAXIMUM_CONNECTIONS),
     ) as http_client:
         user = await _fetch_repositories(http_client, login)
-        agentic_commits = await _fetch_agentic_commits(http_client, user.repositories.nodes)
-    return GithubProfile(
-        GithubUserId(user.database_id),
-        login,
-        agentic_commits,
-    )
+        lines_added_by_agent = await _count_lines_added_by_agent(
+            http_client, user.repositories.nodes
+        )
+    return GithubProfile(GithubUserId(user.database_id), login, lines_added_by_agent)
 
 
 async def fetch_avatar(login: VerifiedGithubUsername) -> Avatar:

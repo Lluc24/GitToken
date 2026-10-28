@@ -17,7 +17,7 @@ flowchart LR
     db -->|REST| Supabase[(Supabase)]
     api -->|cache miss| github[github.py]
     github -->|GraphQL| GitHub[(GitHub API)]
-    github -->|agentic commits| domain[domain.py]
+    github -->|lines added per agent| domain[domain.py]
     domain -->|tokens per agent| api
     api -->|save profile| db
 ```

@@ -1,7 +1,7 @@
-from collections import Counter
 from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import StrEnum
+from types import MappingProxyType
 from typing import NewType
 
 
@@ -58,12 +58,6 @@ def estimate_tokens(lines_added: int) -> int:
     return lines_added * TOKENS_PER_ADDED_LINE
 
 
-@dataclass(frozen=True)
-class AgenticCommit:
-    agent: Agent
-    lines_added: int
-
-
 class Rarity(StrEnum):
     COMMON = "common"
     RARE = "rare"
@@ -112,28 +106,20 @@ GithubUserId = NewType("GithubUserId", int)
 class GithubProfile:
     github_id: GithubUserId
     login: VerifiedGithubUsername
-    agentic_commits: tuple[AgenticCommit, ...]
+    lines_added_by_agent: MappingProxyType[Agent, int]
 
     @property
     def total_tokens(self) -> int:
-        return estimate_tokens(
-            sum(agentic_commit.lines_added for agentic_commit in self.agentic_commits)
-        )
-
-    @property
-    def lines_added_by_agent(self) -> dict[Agent, int]:
-        """Post: agents with at least one commit, largest first."""
-        lines_added: Counter[Agent] = Counter()
-        for agentic_commit in self.agentic_commits:
-            lines_added[agentic_commit.agent] += agentic_commit.lines_added
-        return dict(lines_added.most_common())
+        return estimate_tokens(sum(self.lines_added_by_agent.values()))
 
     @property
     def tokens_by_agent(self) -> dict[Agent, int]:
-        """Post: agents with at least one commit, largest first."""
+        """Post: agents with at least one commit, largest first, ties by agent."""
         return {
             agent: estimate_tokens(lines_added)
-            for agent, lines_added in self.lines_added_by_agent.items()
+            for agent, lines_added in sorted(
+                self.lines_added_by_agent.items(), key=lambda item: (-item[1], item[0])
+            )
         }
 
     @property
