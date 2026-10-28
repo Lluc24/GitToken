@@ -58,14 +58,20 @@ export function useProfileTokens(login: string) {
   });
 }
 
+// rarity is optional because the CDN may serve a response cached before #85 for up to
+// s-maxage + stale-while-revalidate = 360 seconds after the deploy.
 const leaderboardResponse = z.array(
-  z.object({ login: z.string(), total_tokens: z.number(), rarity }),
+  z.object({
+    login: z.string(),
+    total_tokens: z.number(),
+    rarity: rarity.optional(),
+  }),
 );
 
 export type LeaderboardEntry = {
   login: string;
   totalTokens: number;
-  rarity: Rarity;
+  rarity: Rarity | null;
 };
 
 async function fetchLeaderboard(): Promise<LeaderboardEntry[]> {
@@ -85,7 +91,7 @@ async function fetchLeaderboard(): Promise<LeaderboardEntry[]> {
   return parsed.data.map((entry) => ({
     login: entry.login,
     totalTokens: entry.total_tokens,
-    rarity: entry.rarity,
+    rarity: entry.rarity ?? null,
   }));
 }
 
