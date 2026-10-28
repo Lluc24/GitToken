@@ -1,10 +1,5 @@
 import { Link } from "react-router-dom";
-import {
-  type Rarity,
-  type RarityThreshold,
-  useLeaderboard,
-  useRarities,
-} from "./api";
+import { type Rarity, useLeaderboard } from "./api";
 import { formatTokens } from "./format";
 import { glassClassName } from "./glass";
 
@@ -22,24 +17,8 @@ const rarityClassNames: Record<Rarity, string> = {
   champion: "text-amber-600 dark:text-amber-300",
 };
 
-function rarityFor(totalTokens: number, thresholds: RarityThreshold[]): Rarity {
-  let result: Rarity = "common";
-  let bestMin = 0;
-  for (const threshold of thresholds) {
-    if (
-      totalTokens >= threshold.min_tokens &&
-      threshold.min_tokens >= bestMin
-    ) {
-      bestMin = threshold.min_tokens;
-      result = threshold.rarity;
-    }
-  }
-  return result;
-}
-
 export function Leaderboard() {
   const result = useLeaderboard();
-  const rarities = useRarities();
   return (
     <section className={`w-full rounded-[32px] p-4 sm:p-6 ${glassClassName}`}>
       <h1 className="font-bold text-3xl tracking-tight">Leaderboard</h1>
@@ -81,16 +60,16 @@ export function Leaderboard() {
                 >
                   {profile.login}
                 </Link>
-                {rarities.isSuccess && (
+                {profile.rarity !== null && (
                   <span
-                    className={`block font-medium text-xs ${rarityClassNames[rarityFor(profile.total_tokens, rarities.data)]}`}
+                    className={`block font-medium text-xs ${rarityClassNames[profile.rarity]}`}
                   >
-                    {rarityFor(profile.total_tokens, rarities.data)}
+                    {profile.rarity}
                   </span>
                 )}
               </div>
               <span className="shrink-0 font-mono text-sm tabular-nums sm:min-w-16 sm:text-right">
-                {formatTokens(profile.total_tokens)}
+                {formatTokens(profile.totalTokens)}
               </span>
             </li>
           ))}

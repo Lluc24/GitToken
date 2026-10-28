@@ -1,7 +1,7 @@
-from collections import Counter
 from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import StrEnum
+from types import MappingProxyType
 from typing import NewType
 
 
@@ -54,14 +54,8 @@ def find_agent(author_emails: Iterable[str]) -> Agent | None:
 TOKENS_PER_ADDED_LINE = 3000
 
 
-@dataclass(frozen=True)
-class AgenticCommit:
-    agent: Agent
-    lines_added: int
-
-    @property
-    def tokens(self) -> int:
-        return self.lines_added * TOKENS_PER_ADDED_LINE
+def estimate_tokens(lines_added: int) -> int:
+    return lines_added * TOKENS_PER_ADDED_LINE
 
 
 class Rarity(StrEnum):
@@ -82,6 +76,14 @@ MIN_TOKENS_BY_RARITY = {
 }
 
 
+def rarity_for(total_tokens: int) -> Rarity:
+    """Post: the highest rarity whose minimum total_tokens reaches."""
+    reached_rarities = [
+        rarity for rarity, min_tokens in MIN_TOKENS_BY_RARITY.items() if total_tokens >= min_tokens
+    ]
+    return reached_rarities[-1]
+
+
 class GithubRequestError(Exception):
     pass
 
@@ -89,6 +91,8 @@ class GithubRequestError(Exception):
 class ProfileNotFoundError(Exception):
     pass
 
+
+GITHUB_LOGIN_PATTERN = "^[A-Za-z0-9][A-Za-z0-9-]{0,38}$"
 
 # A username that passed the format check at the boundary.
 VerifiedGithubUsername = NewType("VerifiedGithubUsername", str)
@@ -104,34 +108,32 @@ GithubUserId = NewType("GithubUserId", int)
 class GithubProfile:
     github_id: GithubUserId
     login: VerifiedGithubUsername
-    agentic_commits: tuple[AgenticCommit, ...]
+    lines_added_by_agent: MappingProxyType[Agent, int]
 
     @property
     def total_tokens(self) -> int:
-        return sum(agentic_commit.tokens for agentic_commit in self.agentic_commits)
-
-    @property
-    def lines_added_by_agent(self) -> dict[Agent, int]:
-        """Post: agents with at least one commit, largest first."""
-        lines_added: Counter[Agent] = Counter()
-        for agentic_commit in self.agentic_commits:
-            lines_added[agentic_commit.agent] += agentic_commit.lines_added
-        return dict(lines_added.most_common())
+        return estimate_tokens(sum(self.lines_added_by_agent.values()))
 
     @property
     def tokens_by_agent(self) -> dict[Agent, int]:
-        """Post: agents with at least one commit, largest first."""
+        """Post: agents with at least one commit, largest first, ties by agent."""
         return {
-            agent: added_lines * TOKENS_PER_ADDED_LINE
-            for agent, added_lines in self.lines_added_by_agent.items()
+            agent: estimate_tokens(lines_added)
+            for agent, lines_added in sorted(
+                self.lines_added_by_agent.items(), key=lambda item: (-item[1], item[0])
+            )
         }
 
     @property
     def rarity(self) -> Rarity:
-        """Post: the highest rarity whose minimum the total tokens reach."""
-        reached_rarities = [
-            rarity
-            for rarity, min_tokens in MIN_TOKENS_BY_RARITY.items()
-            if self.total_tokens >= min_tokens
-        ]
-        return reached_rarities[-1]
+        return rarity_for(self.total_tokens)
+
+
+@dataclass(frozen=True)
+class LeaderboardEntry:
+    login: VerifiedGithubUsername
+    total_tokens: int
+
+    @property
+    def rarity(self) -> Rarity:
+        return rarity_for(self.total_tokens)

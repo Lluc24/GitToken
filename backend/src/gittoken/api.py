@@ -15,15 +15,14 @@ from sentry_sdk.integrations.loguru import LoguruIntegration
 
 from gittoken.application import fetch_fresh_leaderboard, lookup_profile
 from gittoken.badge import (
-    ProfileStats,
     Theme,
     render_badge,
     render_error_card,
     render_profile_card,
     render_scanning_card,
 )
-from gittoken.db import LeaderboardEntry
 from gittoken.domain import (
+    GITHUB_LOGIN_PATTERN,
     MIN_TOKENS_BY_RARITY,
     NAME_BY_AGENT,
     Agent,
@@ -36,7 +35,6 @@ from gittoken.domain import (
 from gittoken.github import fetch_avatar
 from gittoken.telemetry import configure_tracing
 
-_GITHUB_LOGIN_PATTERN = "^[A-Za-z0-9][A-Za-z0-9-]{0,38}$"
 # Profiles are rescanned at most daily, so the CDN may keep these responses for a day.
 _DAILY_CACHE_CONTROL = "public, max-age=0, s-maxage=86400, stale-while-revalidate=3600"
 # GitHub's image proxy gives up after a few seconds, so a slower first scan answers with a placeholder.
@@ -61,6 +59,12 @@ class ProfileTokensResponse(BaseModel):
     tokens_by_agent: dict[Agent, int]
 
 
+class LeaderboardEntryResponse(BaseModel):
+    login: str
+    total_tokens: int
+    rarity: Rarity
+
+
 class AgentResponse(BaseModel):
     agent: Agent
     name: str
@@ -69,15 +73,6 @@ class AgentResponse(BaseModel):
 class RarityResponse(BaseModel):
     rarity: Rarity
     min_tokens: int
-
-
-def _profile_stats(profile: GithubProfile) -> ProfileStats:
-    return ProfileStats(
-        login=profile.login,
-        total_tokens=profile.total_tokens,
-        tokens_by_agent=profile.tokens_by_agent,
-        rarity=profile.rarity,
-    )
 
 
 def _svg_response(svg: str, cache_control: str) -> Response:
@@ -167,7 +162,7 @@ def create_app() -> FastAPI:
 
     @app.get("/v1/users/{login}")
     async def get_user_tokens(
-        login: Annotated[VerifiedGithubUsername, Path(pattern=_GITHUB_LOGIN_PATTERN)],
+        login: Annotated[VerifiedGithubUsername, Path(pattern=GITHUB_LOGIN_PATTERN)],
         response: Response,
     ) -> ProfileTokensResponse:
         try:
@@ -192,12 +187,12 @@ def create_app() -> FastAPI:
 
     @app.get("/v1/badges/{login}.svg")
     async def get_badge(
-        login: Annotated[VerifiedGithubUsername, Path(pattern=_GITHUB_LOGIN_PATTERN)],
+        login: Annotated[VerifiedGithubUsername, Path(pattern=GITHUB_LOGIN_PATTERN)],
         background_tasks: BackgroundTasks,
         theme: Theme = Theme.DARK,
     ) -> Response:
         async def render_card(profile: GithubProfile) -> str:
-            return render_badge(_profile_stats(profile), theme)
+            return render_badge(profile, theme)
 
         return await _badge_response(
             login,
@@ -209,13 +204,13 @@ def create_app() -> FastAPI:
 
     @app.get("/v1/badges/{login}/profile.svg")
     async def get_profile_card(
-        login: Annotated[VerifiedGithubUsername, Path(pattern=_GITHUB_LOGIN_PATTERN)],
+        login: Annotated[VerifiedGithubUsername, Path(pattern=GITHUB_LOGIN_PATTERN)],
         background_tasks: BackgroundTasks,
         theme: Theme = Theme.DARK,
     ) -> Response:
         async def render_card(profile: GithubProfile) -> str:
             avatar = await fetch_avatar(login)
-            return render_profile_card(_profile_stats(profile), avatar, theme)
+            return render_profile_card(profile, avatar, theme)
 
         return await _badge_response(
             login,
@@ -226,7 +221,7 @@ def create_app() -> FastAPI:
         )
 
     @app.get("/v1/leaderboard")
-    async def get_leaderboard(response: Response) -> list[LeaderboardEntry]:
+    async def get_leaderboard(response: Response) -> list[LeaderboardEntryResponse]:
         try:
             entries = await fetch_fresh_leaderboard(
                 settings.supabase_url, settings.supabase_secret_key.get_secret_value()
@@ -241,7 +236,12 @@ def create_app() -> FastAPI:
         response.headers["Cache-Control"] = (
             "public, max-age=0, s-maxage=60, stale-while-revalidate=300"
         )
-        return entries
+        return [
+            LeaderboardEntryResponse(
+                login=entry.login, total_tokens=entry.total_tokens, rarity=entry.rarity
+            )
+            for entry in entries
+        ]
 
     @app.get("/v1/agents")
     def get_agents() -> list[AgentResponse]:

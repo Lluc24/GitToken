@@ -1,13 +1,15 @@
 from datetime import datetime, timedelta
+from types import MappingProxyType
 
 import httpx
-from pydantic import BaseModel, NonNegativeInt
+from pydantic import BaseModel, Field, NonNegativeInt
 
 from gittoken.domain import (
+    GITHUB_LOGIN_PATTERN,
     Agent,
-    AgenticCommit,
     GithubProfile,
     GithubUserId,
+    LeaderboardEntry,
     VerifiedGithubUsername,
 )
 
@@ -28,8 +30,7 @@ class _User(BaseModel):
 async def fetch_cached_profile(
     supabase_url: str, secret_key: str, login: VerifiedGithubUsername, now: datetime
 ) -> GithubProfile | None:
-    """Post: the profile saved in the day before now with its agents, or None when there is none.
-    Each agent's commits come back merged into one AgenticCommit."""
+    """Post: the profile saved in the day before now with its agents, or None when there is none."""
     fresh_since = now - _USER_TTL
     async with httpx.AsyncClient(timeout=_TIMEOUT_SECONDS) as http_client:
         response = await http_client.get(
@@ -48,9 +49,8 @@ async def fetch_cached_profile(
         return GithubProfile(
             GithubUserId(users[0].github_id),
             login,
-            tuple(
-                AgenticCommit(user_agent.agent_id, user_agent.lines_added)
-                for user_agent in users[0].agents
+            MappingProxyType(
+                {user_agent.agent_id: user_agent.lines_added for user_agent in users[0].agents}
             ),
         )
     return None
@@ -92,14 +92,14 @@ async def save_profile(
     response.raise_for_status()
 
 
-class LeaderboardEntry(BaseModel):
-    login: str
-    total_tokens: int
+class _LeaderboardRow(BaseModel):
+    login: str = Field(pattern=GITHUB_LOGIN_PATTERN)
+    total_tokens: NonNegativeInt
 
 
 async def fetch_leaderboard(
     supabase_url: str, secret_key: str, now: datetime
-) -> list[LeaderboardEntry]:
+) -> tuple[LeaderboardEntry, ...]:
     fresh_since = now - _USER_TTL
     async with httpx.AsyncClient(timeout=_TIMEOUT_SECONDS) as http_client:
         response = await http_client.get(
@@ -113,4 +113,7 @@ async def fetch_leaderboard(
             },
         )
     response.raise_for_status()
-    return [LeaderboardEntry.model_validate(row) for row in response.json()]
+    rows = [_LeaderboardRow.model_validate(row) for row in response.json()]
+    return tuple(
+        LeaderboardEntry(VerifiedGithubUsername(row.login), row.total_tokens) for row in rows
+    )
