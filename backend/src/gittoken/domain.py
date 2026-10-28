@@ -92,6 +92,8 @@ class ProfileNotFoundError(Exception):
     pass
 
 
+GITHUB_LOGIN_PATTERN = "^[A-Za-z0-9][A-Za-z0-9-]{0,38}$"
+
 # A username that passed the format check at the boundary.
 VerifiedGithubUsername = NewType("VerifiedGithubUsername", str)
 
@@ -121,6 +123,16 @@ class GithubProfile:
                 self.lines_added_by_agent.items(), key=lambda item: (-item[1], item[0])
             )
         }
+
+    @property
+    def rarity(self) -> Rarity:
+        return rarity_for(self.total_tokens)
+
+
+@dataclass(frozen=True)
+class LeaderboardEntry:
+    login: VerifiedGithubUsername
+    total_tokens: int
 
     @property
     def rarity(self) -> Rarity:

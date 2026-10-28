@@ -2,12 +2,14 @@ from datetime import datetime, timedelta
 from types import MappingProxyType
 
 import httpx
-from pydantic import BaseModel, NonNegativeInt
+from pydantic import BaseModel, Field, NonNegativeInt
 
 from gittoken.domain import (
+    GITHUB_LOGIN_PATTERN,
     Agent,
     GithubProfile,
     GithubUserId,
+    LeaderboardEntry,
     VerifiedGithubUsername,
 )
 
@@ -90,14 +92,14 @@ async def save_profile(
     response.raise_for_status()
 
 
-class LeaderboardEntry(BaseModel):
-    login: str
-    total_tokens: int
+class _LeaderboardRow(BaseModel):
+    login: str = Field(pattern=GITHUB_LOGIN_PATTERN)
+    total_tokens: NonNegativeInt
 
 
 async def fetch_leaderboard(
     supabase_url: str, secret_key: str, now: datetime
-) -> list[LeaderboardEntry]:
+) -> tuple[LeaderboardEntry, ...]:
     fresh_since = now - _USER_TTL
     async with httpx.AsyncClient(timeout=_TIMEOUT_SECONDS) as http_client:
         response = await http_client.get(
@@ -111,4 +113,7 @@ async def fetch_leaderboard(
             },
         )
     response.raise_for_status()
-    return [LeaderboardEntry.model_validate(row) for row in response.json()]
+    rows = [_LeaderboardRow.model_validate(row) for row in response.json()]
+    return tuple(
+        LeaderboardEntry(VerifiedGithubUsername(row.login), row.total_tokens) for row in rows
+    )

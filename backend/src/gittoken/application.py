@@ -5,7 +5,6 @@ import httpx
 from loguru import logger
 
 from gittoken.db import (
-    LeaderboardEntry,
     delete_renamed_user,
     fetch_cached_profile,
     fetch_leaderboard,
@@ -14,6 +13,7 @@ from gittoken.db import (
 from gittoken.domain import (
     GithubProfile,
     GithubRequestError,
+    LeaderboardEntry,
     ProfileNotFoundError,
     VerifiedGithubUsername,
 )
@@ -64,5 +64,5 @@ async def lookup_profile(
 
 async def fetch_fresh_leaderboard(
     supabase_url: str, supabase_secret_key: str
-) -> list[LeaderboardEntry]:
+) -> tuple[LeaderboardEntry, ...]:
     return await fetch_leaderboard(supabase_url, supabase_secret_key, datetime.now(UTC))
