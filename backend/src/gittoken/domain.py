@@ -54,14 +54,14 @@ def find_agent(author_emails: Iterable[str]) -> Agent | None:
 TOKENS_PER_ADDED_LINE = 3000
 
 
+def estimate_tokens(lines_added: int) -> int:
+    return lines_added * TOKENS_PER_ADDED_LINE
+
+
 @dataclass(frozen=True)
 class AgenticCommit:
     agent: Agent
     lines_added: int
-
-    @property
-    def tokens(self) -> int:
-        return self.lines_added * TOKENS_PER_ADDED_LINE
 
 
 class Rarity(StrEnum):
@@ -80,6 +80,14 @@ MIN_TOKENS_BY_RARITY = {
     Rarity.LEGENDARY: 1_000_000_000,
     Rarity.CHAMPION: 10_000_000_000,
 }
+
+
+def rarity_for(total_tokens: int) -> Rarity:
+    """Post: the highest rarity whose minimum total_tokens reaches."""
+    reached_rarities = [
+        rarity for rarity, min_tokens in MIN_TOKENS_BY_RARITY.items() if total_tokens >= min_tokens
+    ]
+    return reached_rarities[-1]
 
 
 class GithubRequestError(Exception):
@@ -108,7 +116,9 @@ class GithubProfile:
 
     @property
     def total_tokens(self) -> int:
-        return sum(agentic_commit.tokens for agentic_commit in self.agentic_commits)
+        return estimate_tokens(
+            sum(agentic_commit.lines_added for agentic_commit in self.agentic_commits)
+        )
 
     @property
     def lines_added_by_agent(self) -> dict[Agent, int]:
@@ -122,16 +132,10 @@ class GithubProfile:
     def tokens_by_agent(self) -> dict[Agent, int]:
         """Post: agents with at least one commit, largest first."""
         return {
-            agent: added_lines * TOKENS_PER_ADDED_LINE
-            for agent, added_lines in self.lines_added_by_agent.items()
+            agent: estimate_tokens(lines_added)
+            for agent, lines_added in self.lines_added_by_agent.items()
         }
 
     @property
     def rarity(self) -> Rarity:
-        """Post: the highest rarity whose minimum the total tokens reach."""
-        reached_rarities = [
-            rarity
-            for rarity, min_tokens in MIN_TOKENS_BY_RARITY.items()
-            if self.total_tokens >= min_tokens
-        ]
-        return reached_rarities[-1]
+        return rarity_for(self.total_tokens)
