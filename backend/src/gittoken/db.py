@@ -1,4 +1,4 @@
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 
 import httpx
 from pydantic import BaseModel, NonNegativeInt
@@ -26,11 +26,11 @@ class _User(BaseModel):
 
 
 async def fetch_cached_profile(
-    supabase_url: str, secret_key: str, login: VerifiedGithubUsername
+    supabase_url: str, secret_key: str, login: VerifiedGithubUsername, now: datetime
 ) -> GithubProfile | None:
-    """Post: the profile saved in the last day with its agents, or None when there is none.
+    """Post: the profile saved in the day before now with its agents, or None when there is none.
     Each agent's commits come back merged into one AgenticCommit."""
-    fresh_since = datetime.now(UTC) - _USER_TTL
+    fresh_since = now - _USER_TTL
     async with httpx.AsyncClient(timeout=_TIMEOUT_SECONDS) as http_client:
         response = await http_client.get(
             f"{supabase_url.rstrip('/')}/rest/v1/users",
@@ -70,7 +70,9 @@ async def delete_renamed_user(supabase_url: str, secret_key: str, profile: Githu
     response.raise_for_status()
 
 
-async def save_profile(supabase_url: str, secret_key: str, profile: GithubProfile) -> None:
+async def save_profile(
+    supabase_url: str, secret_key: str, profile: GithubProfile, now: datetime
+) -> None:
     async with httpx.AsyncClient(timeout=_TIMEOUT_SECONDS) as http_client:
         response = await http_client.post(
             f"{supabase_url.rstrip('/')}/rest/v1/users",
@@ -79,7 +81,7 @@ async def save_profile(supabase_url: str, secret_key: str, profile: GithubProfil
             json={
                 "github_id": profile.github_id,
                 "login": profile.login.lower(),
-                "fetched_at": datetime.now(UTC).isoformat(),
+                "fetched_at": now.isoformat(),
                 "total_tokens": profile.total_tokens,
                 "agents": [
                     {"agent_id": agent, "lines_added": lines_added}
@@ -95,8 +97,10 @@ class LeaderboardEntry(BaseModel):
     total_tokens: int
 
 
-async def fetch_leaderboard(supabase_url: str, secret_key: str) -> list[LeaderboardEntry]:
-    fresh_since = datetime.now(UTC) - _USER_TTL
+async def fetch_leaderboard(
+    supabase_url: str, secret_key: str, now: datetime
+) -> list[LeaderboardEntry]:
+    fresh_since = now - _USER_TTL
     async with httpx.AsyncClient(timeout=_TIMEOUT_SECONDS) as http_client:
         response = await http_client.get(
             f"{supabase_url.rstrip('/')}/rest/v1/users",
