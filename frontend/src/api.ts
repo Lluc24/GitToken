@@ -59,10 +59,16 @@ export function useProfileTokens(login: string) {
 }
 
 const leaderboardResponse = z.array(
-  z.object({ login: z.string(), total_tokens: z.number() }),
+  z.object({ login: z.string(), total_tokens: z.number(), rarity }),
 );
 
-async function fetchLeaderboard() {
+export type LeaderboardEntry = {
+  login: string;
+  totalTokens: number;
+  rarity: Rarity;
+};
+
+async function fetchLeaderboard(): Promise<LeaderboardEntry[]> {
   const response = await fetch("/v1/leaderboard");
   if (!response.ok)
     throw new Error("The leaderboard is unavailable right now.");
@@ -76,45 +82,17 @@ async function fetchLeaderboard() {
   if (!parsed.success) {
     throw new Error("The leaderboard returned an unexpected response");
   }
-  return parsed.data;
+  return parsed.data.map((entry) => ({
+    login: entry.login,
+    totalTokens: entry.total_tokens,
+    rarity: entry.rarity,
+  }));
 }
 
 export function useLeaderboard() {
   return useQuery({
     queryKey: ["leaderboard"],
     queryFn: fetchLeaderboard,
-    retry: false,
-  });
-}
-
-const rarityThreshold = z.object({ rarity, min_tokens: z.number() });
-
-export type RarityThreshold = z.infer<typeof rarityThreshold>;
-
-const raritiesResponse = z.array(rarityThreshold);
-
-async function fetchRarities(): Promise<RarityThreshold[]> {
-  const response = await fetch("/v1/rarities");
-  if (!response.ok) {
-    throw new Error("The rarity list is unavailable right now.");
-  }
-  let rawBody: unknown;
-  try {
-    rawBody = await response.json();
-  } catch {
-    throw new Error("The rarity list returned an unreadable response");
-  }
-  const parsed = raritiesResponse.safeParse(rawBody);
-  if (!parsed.success) {
-    throw new Error("The rarity list returned an unexpected response");
-  }
-  return parsed.data;
-}
-
-export function useRarities() {
-  return useQuery({
-    queryKey: ["rarities"],
-    queryFn: fetchRarities,
     retry: false,
   });
 }
