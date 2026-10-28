@@ -15,7 +15,6 @@ from sentry_sdk.integrations.loguru import LoguruIntegration
 
 from gittoken.application import fetch_fresh_leaderboard, lookup_profile
 from gittoken.badge import (
-    ProfileStats,
     Theme,
     render_badge,
     render_error_card,
@@ -69,15 +68,6 @@ class AgentResponse(BaseModel):
 class RarityResponse(BaseModel):
     rarity: Rarity
     min_tokens: int
-
-
-def _profile_stats(profile: GithubProfile) -> ProfileStats:
-    return ProfileStats(
-        login=profile.login,
-        total_tokens=profile.total_tokens,
-        tokens_by_agent=profile.tokens_by_agent,
-        rarity=profile.rarity,
-    )
 
 
 def _svg_response(svg: str, cache_control: str) -> Response:
@@ -197,7 +187,7 @@ def create_app() -> FastAPI:
         theme: Theme = Theme.DARK,
     ) -> Response:
         async def render_card(profile: GithubProfile) -> str:
-            return render_badge(_profile_stats(profile), theme)
+            return render_badge(profile, theme)
 
         return await _badge_response(
             login,
@@ -215,7 +205,7 @@ def create_app() -> FastAPI:
     ) -> Response:
         async def render_card(profile: GithubProfile) -> str:
             avatar = await fetch_avatar(login)
-            return render_profile_card(_profile_stats(profile), avatar, theme)
+            return render_profile_card(profile, avatar, theme)
 
         return await _badge_response(
             login,

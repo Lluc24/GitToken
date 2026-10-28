@@ -6,7 +6,7 @@ from io import BytesIO
 from jinja2 import Environment, PackageLoader, StrictUndefined
 from PIL import Image
 
-from gittoken.domain import NAME_BY_AGENT, Agent, Avatar
+from gittoken.domain import NAME_BY_AGENT, Avatar, GithubProfile
 
 _MAX_ROWS = 2
 _AVATAR_JPEG_QUALITY = 82
@@ -15,14 +15,6 @@ _AVATAR_JPEG_QUALITY = 82
 class Theme(StrEnum):
     DARK = "dark"
     LIGHT = "light"
-
-
-@dataclass(frozen=True)
-class ProfileStats:
-    login: str
-    total_tokens: int
-    tokens_by_agent: dict[Agent, int]
-    rarity: str
 
 
 @dataclass(frozen=True)
@@ -60,23 +52,26 @@ def _row(mark: str, name: str, tokens: int, total_tokens: int) -> _Row:
     return _Row(mark=mark, name=name, tokens=tokens, share=share, percent=round(share * 100))
 
 
-def _rows(tokens_by_agent: dict[Agent, int], total_tokens: int) -> list[_Row]:
+def _rows(profile: GithubProfile) -> list[_Row]:
     """Post: up to two agents by name; beyond that, the top agent plus the rest folded into Others."""
-    agents = sorted(tokens_by_agent.items(), key=lambda item: item[1], reverse=True)
-    rows = [_row(agent, NAME_BY_AGENT[agent], tokens, total_tokens) for agent, tokens in agents]
+    total_tokens = profile.total_tokens
+    rows = [
+        _row(agent, NAME_BY_AGENT[agent], tokens, total_tokens)
+        for agent, tokens in profile.tokens_by_agent.items()
+    ]
     if len(rows) > _MAX_ROWS:
         others_tokens = sum(row.tokens for row in rows[1:])
         return [rows[0], _row("others", "Others", others_tokens, total_tokens)]
     return rows
 
 
-def render_badge(stats: ProfileStats, theme: Theme) -> str:
+def render_badge(profile: GithubProfile, theme: Theme) -> str:
     return _badge_template.render(
-        login=stats.login,
-        total_tokens=stats.total_tokens,
-        rarity=stats.rarity,
+        login=profile.login,
+        total_tokens=profile.total_tokens,
+        rarity=profile.rarity,
         theme=theme,
-        rows=_rows(stats.tokens_by_agent, stats.total_tokens),
+        rows=_rows(profile),
     )
 
 
@@ -88,17 +83,15 @@ def _avatar_data_url(avatar: Avatar) -> str:
     return f"data:image/jpeg;base64,{b64encode(jpeg.getvalue()).decode()}"
 
 
-def render_profile_card(stats: ProfileStats, avatar: Avatar, theme: Theme) -> str:
+def render_profile_card(profile: GithubProfile, avatar: Avatar, theme: Theme) -> str:
     """Post: a self-contained SVG; the avatar is inlined because READMEs block external images."""
-    rows = _rows(stats.tokens_by_agent, stats.total_tokens)
+    rows = _rows(profile)
     agents = ", ".join(f"{row.name} {_format_tokens(row.tokens)}" for row in rows)
-    description = (
-        f"{stats.login}: {_format_tokens(stats.total_tokens)} estimated tokens, {stats.rarity}"
-    )
+    description = f"{profile.login}: {_format_tokens(profile.total_tokens)} estimated tokens, {profile.rarity}"
     return _profile_template.render(
-        login=stats.login,
-        total_tokens=stats.total_tokens,
-        rarity=stats.rarity,
+        login=profile.login,
+        total_tokens=profile.total_tokens,
+        rarity=profile.rarity,
         theme=theme,
         rows=rows,
         description=f"{description}. {agents}." if rows else f"{description}.",
