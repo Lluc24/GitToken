@@ -92,6 +92,10 @@ class ProfileNotFoundError(Exception):
     pass
 
 
+class ProfileStoreError(Exception):
+    pass
+
+
 GITHUB_LOGIN_PATTERN = "^[A-Za-z0-9][A-Za-z0-9-]{0,38}$"
 
 # A username that passed the format check at the boundary.

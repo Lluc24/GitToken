@@ -1,7 +1,8 @@
 import asyncio
 import logging
 import sys
-from collections.abc import Awaitable, Callable, Coroutine
+from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine
+from contextlib import asynccontextmanager
 from functools import partial
 from typing import Annotated
 
@@ -9,7 +10,7 @@ import httpx
 import sentry_sdk
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Path, Response, status
 from loguru import logger
-from pydantic import BaseModel, SecretStr
+from pydantic import BaseModel, HttpUrl, SecretStr
 from pydantic_settings import BaseSettings
 from sentry_sdk.integrations.loguru import LoguruIntegration
 
@@ -21,6 +22,7 @@ from gittoken.badge import (
     render_profile_card,
     render_scanning_card,
 )
+from gittoken.db import create_supabase_client
 from gittoken.domain import (
     GITHUB_LOGIN_PATTERN,
     MIN_TOKENS_BY_RARITY,
@@ -29,6 +31,7 @@ from gittoken.domain import (
     GithubProfile,
     GithubRequestError,
     ProfileNotFoundError,
+    ProfileStoreError,
     Rarity,
     VerifiedGithubUsername,
 )
@@ -46,7 +49,7 @@ _BADGE_ERROR_CACHE_CONTROL = "public, max-age=0, s-maxage=600"
 
 class ApiSettings(BaseSettings):
     github_token: SecretStr
-    supabase_url: str
+    supabase_url: HttpUrl
     supabase_secret_key: SecretStr
     otel_exporter_otlp_endpoint: str = ""
     sentry_dsn: SecretStr = SecretStr("")
@@ -127,6 +130,8 @@ async def _badge_response(
             return _badge_error_response(login, "No GitHub user with this name", theme)
         except (httpx.HTTPError, GithubRequestError):
             return _badge_error_response(login, "GitHub is unavailable, retrying soon", theme)
+        except ProfileStoreError:
+            return _badge_error_response(login, "GitToken is unavailable, retrying soon", theme)
         return _svg_response(svg, _DAILY_CACHE_CONTROL)
     return _svg_response(render_scanning_card(login, theme), _SCANNING_CACHE_CONTROL)
 
@@ -152,12 +157,16 @@ def create_app() -> FastAPI:
             traces_sample_rate=0,
         )
     configure_tracing(settings.otel_exporter_otlp_endpoint)
-    app = FastAPI(title="GitToken")
-    lookup_settings_profile = partial(
-        lookup_profile,
-        settings.github_token.get_secret_value(),
-        settings.supabase_url,
-        settings.supabase_secret_key.get_secret_value(),
+    supabase_client = create_supabase_client(settings.supabase_url, settings.supabase_secret_key)
+
+    @asynccontextmanager
+    async def close_clients_on_shutdown(_: FastAPI) -> AsyncIterator[None]:
+        yield
+        await supabase_client.aclose()
+
+    app = FastAPI(title="GitToken", lifespan=close_clients_on_shutdown)
+    lookup_profile_by_login = partial(
+        lookup_profile, settings.github_token.get_secret_value(), supabase_client
     )
 
     @app.get("/v1/users/{login}")
@@ -166,12 +175,12 @@ def create_app() -> FastAPI:
         response: Response,
     ) -> ProfileTokensResponse:
         try:
-            profile = await lookup_settings_profile(login)
+            profile = await lookup_profile_by_login(login)
         except ProfileNotFoundError as error:
             raise HTTPException(
                 status.HTTP_404_NOT_FOUND, str(error), headers={"Cache-Control": "no-store"}
             ) from error
-        except (httpx.HTTPError, GithubRequestError) as error:
+        except (httpx.HTTPError, GithubRequestError, ProfileStoreError) as error:
             raise HTTPException(
                 status.HTTP_502_BAD_GATEWAY,
                 "Profile lookup unavailable",
@@ -197,7 +206,7 @@ def create_app() -> FastAPI:
         return await _badge_response(
             login,
             theme,
-            lambda: lookup_settings_profile(login),
+            lambda: lookup_profile_by_login(login),
             background_tasks,
             render_card,
         )
@@ -215,7 +224,7 @@ def create_app() -> FastAPI:
         return await _badge_response(
             login,
             theme,
-            lambda: lookup_settings_profile(login),
+            lambda: lookup_profile_by_login(login),
             background_tasks,
             render_card,
         )
@@ -223,10 +232,8 @@ def create_app() -> FastAPI:
     @app.get("/v1/leaderboard")
     async def get_leaderboard(response: Response) -> list[LeaderboardEntryResponse]:
         try:
-            entries = await fetch_fresh_leaderboard(
-                settings.supabase_url, settings.supabase_secret_key.get_secret_value()
-            )
-        except httpx.HTTPError as error:
+            entries = await fetch_fresh_leaderboard(supabase_client)
+        except ProfileStoreError as error:
             raise HTTPException(
                 status.HTTP_502_BAD_GATEWAY,
                 "Leaderboard unavailable",

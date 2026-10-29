@@ -1,8 +1,17 @@
 from datetime import datetime, timedelta
 from types import MappingProxyType
+from typing import NewType
 
 import httpx
-from pydantic import BaseModel, Field, NonNegativeInt
+from pydantic import (
+    BaseModel,
+    Field,
+    HttpUrl,
+    NonNegativeInt,
+    SecretStr,
+    TypeAdapter,
+    ValidationError,
+)
 
 from gittoken.domain import (
     GITHUB_LOGIN_PATTERN,
@@ -10,11 +19,42 @@ from gittoken.domain import (
     GithubProfile,
     GithubUserId,
     LeaderboardEntry,
+    ProfileStoreError,
     VerifiedGithubUsername,
 )
 
 _TIMEOUT_SECONDS = 10
 _USER_TTL = timedelta(days=1)
+
+SupabaseClient = NewType("SupabaseClient", httpx.AsyncClient)
+
+
+def create_supabase_client(supabase_url: HttpUrl, secret_key: SecretStr) -> SupabaseClient:
+    return SupabaseClient(
+        httpx.AsyncClient(
+            base_url=f"{str(supabase_url).rstrip('/')}/rest/v1",
+            headers={"apikey": secret_key.get_secret_value()},
+            timeout=_TIMEOUT_SECONDS,
+        )
+    )
+
+
+async def _send(supabase_client: SupabaseClient, request: httpx.Request) -> httpx.Response:
+    try:
+        response = await supabase_client.send(request)
+        response.raise_for_status()
+    except httpx.HTTPError as error:
+        raise ProfileStoreError(
+            f"Supabase could not complete {request.method} {request.url.path}"
+        ) from error
+    return response
+
+
+def _parse_rows[Row](response: httpx.Response, rows_adapter: TypeAdapter[list[Row]]) -> list[Row]:
+    try:
+        return rows_adapter.validate_json(response.content)
+    except ValidationError as error:
+        raise ProfileStoreError("Supabase returned rows of an unexpected shape") from error
 
 
 class _UserAgent(BaseModel):
@@ -27,24 +67,25 @@ class _User(BaseModel):
     agents: list[_UserAgent]
 
 
+_USER_ROWS = TypeAdapter(list[_User])
+
+
 async def fetch_cached_profile(
-    supabase_url: str, secret_key: str, login: VerifiedGithubUsername, now: datetime
+    supabase_client: SupabaseClient, login: VerifiedGithubUsername, now: datetime
 ) -> GithubProfile | None:
     """Post: the profile saved in the day before now with its agents, or None when there is none."""
     fresh_since = now - _USER_TTL
-    async with httpx.AsyncClient(timeout=_TIMEOUT_SECONDS) as http_client:
-        response = await http_client.get(
-            f"{supabase_url.rstrip('/')}/rest/v1/users",
-            headers={"apikey": secret_key},
-            params={
-                "select": "github_id,agents",
-                "login": f"eq.{login.lower()}",
-                "fetched_at": f"gte.{fresh_since.isoformat()}",
-                "agents": "not.is.null",
-            },
-        )
-    response.raise_for_status()
-    users = [_User.model_validate(row) for row in response.json()]
+    request = supabase_client.build_request(
+        "GET",
+        "/users",
+        params={
+            "select": "github_id,agents",
+            "login": f"eq.{login.lower()}",
+            "fetched_at": f"gte.{fresh_since.isoformat()}",
+            "agents": "not.is.null",
+        },
+    )
+    users = _parse_rows(await _send(supabase_client, request), _USER_ROWS)
     if users:
         return GithubProfile(
             GithubUserId(users[0].github_id),
@@ -56,40 +97,39 @@ async def fetch_cached_profile(
     return None
 
 
-async def delete_renamed_user(supabase_url: str, secret_key: str, profile: GithubProfile) -> None:
+async def delete_renamed_user(supabase_client: SupabaseClient, profile: GithubProfile) -> None:
     """Post: no other GitHub id holds this profile's login, which a renamed account may have left."""
-    async with httpx.AsyncClient(timeout=_TIMEOUT_SECONDS) as http_client:
-        response = await http_client.delete(
-            f"{supabase_url.rstrip('/')}/rest/v1/users",
-            headers={"apikey": secret_key},
-            params={
-                "login": f"eq.{profile.login.lower()}",
-                "github_id": f"neq.{profile.github_id}",
-            },
-        )
-    response.raise_for_status()
+    request = supabase_client.build_request(
+        "DELETE",
+        "/users",
+        params={
+            "login": f"eq.{profile.login.lower()}",
+            "github_id": f"neq.{profile.github_id}",
+        },
+    )
+    await _send(supabase_client, request)
 
 
 async def save_profile(
-    supabase_url: str, secret_key: str, profile: GithubProfile, now: datetime
+    supabase_client: SupabaseClient, profile: GithubProfile, now: datetime
 ) -> None:
-    async with httpx.AsyncClient(timeout=_TIMEOUT_SECONDS) as http_client:
-        response = await http_client.post(
-            f"{supabase_url.rstrip('/')}/rest/v1/users",
-            headers={"apikey": secret_key, "Prefer": "resolution=merge-duplicates"},
-            params={"on_conflict": "github_id"},
-            json={
-                "github_id": profile.github_id,
-                "login": profile.login.lower(),
-                "fetched_at": now.isoformat(),
-                "total_tokens": profile.total_tokens,
-                "agents": [
-                    {"agent_id": agent, "lines_added": lines_added}
-                    for agent, lines_added in profile.lines_added_by_agent.items()
-                ],
-            },
-        )
-    response.raise_for_status()
+    request = supabase_client.build_request(
+        "POST",
+        "/users",
+        headers={"Prefer": "resolution=merge-duplicates"},
+        params={"on_conflict": "github_id"},
+        json={
+            "github_id": profile.github_id,
+            "login": profile.login.lower(),
+            "fetched_at": now.isoformat(),
+            "total_tokens": profile.total_tokens,
+            "agents": [
+                {"agent_id": agent, "lines_added": lines_added}
+                for agent, lines_added in profile.lines_added_by_agent.items()
+            ],
+        },
+    )
+    await _send(supabase_client, request)
 
 
 class _LeaderboardRow(BaseModel):
@@ -97,23 +137,24 @@ class _LeaderboardRow(BaseModel):
     total_tokens: NonNegativeInt
 
 
+_LEADERBOARD_ROWS = TypeAdapter(list[_LeaderboardRow])
+
+
 async def fetch_leaderboard(
-    supabase_url: str, secret_key: str, now: datetime
+    supabase_client: SupabaseClient, now: datetime
 ) -> tuple[LeaderboardEntry, ...]:
     fresh_since = now - _USER_TTL
-    async with httpx.AsyncClient(timeout=_TIMEOUT_SECONDS) as http_client:
-        response = await http_client.get(
-            f"{supabase_url.rstrip('/')}/rest/v1/users",
-            headers={"apikey": secret_key},
-            params={
-                "select": "login,total_tokens",
-                "fetched_at": f"gte.{fresh_since.isoformat()}",
-                "order": "total_tokens.desc,login.asc",
-                "limit": "50",
-            },
-        )
-    response.raise_for_status()
-    rows = [_LeaderboardRow.model_validate(row) for row in response.json()]
+    request = supabase_client.build_request(
+        "GET",
+        "/users",
+        params={
+            "select": "login,total_tokens",
+            "fetched_at": f"gte.{fresh_since.isoformat()}",
+            "order": "total_tokens.desc,login.asc",
+            "limit": "50",
+        },
+    )
+    rows = _parse_rows(await _send(supabase_client, request), _LEADERBOARD_ROWS)
     return tuple(
         LeaderboardEntry(VerifiedGithubUsername(row.login), row.total_tokens) for row in rows
     )
