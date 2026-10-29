@@ -1,7 +1,6 @@
 from collections import Counter
 from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import datetime
 from enum import StrEnum
 from types import MappingProxyType
 from typing import NewType
@@ -110,6 +109,10 @@ class OrganizationInstallationError(Exception):
     pass
 
 
+class InvalidAuthorizationCodeError(Exception):
+    pass
+
+
 GITHUB_LOGIN_PATTERN = "^[A-Za-z0-9][A-Za-z0-9-]{0,38}$"
 
 # A username that passed the format check at the boundary.
@@ -130,7 +133,16 @@ InstallationId = NewType("InstallationId", int)
 class PersonalInstallation:
     github_id: GithubUserId
     login: VerifiedGithubUsername
-    updated_at: datetime
+
+
+# A one-time code GitHub hands the browser when a user authorizes the app during installation.
+GithubAuthorizationCode = NewType("GithubAuthorizationCode", str)
+
+
+@dataclass(frozen=True)
+class InstallationAuthorization:
+    installation_id: InstallationId
+    code: GithubAuthorizationCode
 
 
 # GitHub's immutable numeric repository id; names are never stored.

@@ -28,7 +28,8 @@ from sentry_sdk.integrations.loguru import LoguruIntegration
 from gittoken.application import (
     fetch_fresh_leaderboard,
     fetch_profile_avatar,
-    finish_installation,
+    find_installation_login,
+    finish_authorized_installation,
     lookup_profile,
     withdraw_consent,
 )
@@ -45,10 +46,13 @@ from gittoken.domain import (
     MIN_TOKENS_BY_RARITY,
     NAME_BY_AGENT,
     Agent,
+    GithubAuthorizationCode,
     GithubProfile,
     GithubRequestError,
+    InstallationAuthorization,
     InstallationId,
     InstallationNotFoundError,
+    InvalidAuthorizationCodeError,
     InvalidWebhookError,
     OrganizationInstallationError,
     ProfileNotFoundError,
@@ -59,8 +63,10 @@ from gittoken.domain import (
 from gittoken.github import (
     GithubApiClient,
     GithubApp,
+    GithubOauthClient,
     create_github_api_client,
     create_github_avatar_client,
+    create_github_oauth_client,
     load_github_app_private_key,
     parse_webhook,
 )
@@ -88,21 +94,27 @@ class ApiSettings(BaseSettings):
     github_app_private_key: SecretStr | None = None
     github_webhook_secret: SecretStr | None = None
     github_app_slug: str | None = Field(default=None, pattern="^[a-z0-9][a-z0-9-]*$")
+    github_app_client_id: str | None = Field(default=None, min_length=1)
+    github_app_client_secret: SecretStr | None = None
 
     @property
     def github_app(self) -> GithubApp | None:
-        """Post: the GitHub App when all four of its settings are set, else None."""
+        """Post: the GitHub App when all six of its settings are set, else None."""
         if (
             self.github_app_id is not None
             and self.github_app_private_key is not None
             and self.github_webhook_secret is not None
             and self.github_app_slug is not None
+            and self.github_app_client_id is not None
+            and self.github_app_client_secret is not None
         ):
             return GithubApp(
                 self.github_app_id,
                 load_github_app_private_key(self.github_app_private_key),
                 self.github_webhook_secret,
                 self.github_app_slug,
+                self.github_app_client_id,
+                self.github_app_client_secret,
             )
         return None
 
@@ -113,6 +125,8 @@ class ApiSettings(BaseSettings):
             "GITHUB_APP_PRIVATE_KEY": self.github_app_private_key,
             "GITHUB_WEBHOOK_SECRET": self.github_webhook_secret,
             "GITHUB_APP_SLUG": self.github_app_slug,
+            "GITHUB_APP_CLIENT_ID": self.github_app_client_id,
+            "GITHUB_APP_CLIENT_SECRET": self.github_app_client_secret,
         }
         missing_names = [name for name, value in github_app_settings.items() if value is None]
         if 0 < len(missing_names) < len(github_app_settings):
@@ -212,6 +226,7 @@ def _add_github_app_routes(
     app: FastAPI,
     github_app: GithubApp | None,
     github_client: GithubApiClient,
+    oauth_client: GithubOauthClient,
     supabase_client: SupabaseClient,
 ) -> None:
     @app.get("/v1/github-app")
@@ -229,14 +244,28 @@ def _add_github_app_routes(
     @app.get("/v1/github-app/setup")
     async def finish_github_app_setup(
         installation_id: Annotated[InstallationId, Query(gt=0)],
+        code: Annotated[GithubAuthorizationCode | None, Query(min_length=1)] = None,
     ) -> RedirectResponse:
-        """GitHub sends the browser here after an install or a repository change."""
+        """GitHub sends the browser here after an install or a repository change, with code when
+        the user authorized the app; without it nothing is changed."""
         no_store_headers = {"Cache-Control": "no-store"}
         if github_app is not None:
             try:
-                login = await finish_installation(
-                    github_client, supabase_client, github_app, installation_id
+                login = (
+                    await finish_authorized_installation(
+                        github_client,
+                        oauth_client,
+                        supabase_client,
+                        github_app,
+                        InstallationAuthorization(installation_id, code),
+                    )
+                    if code is not None
+                    else await find_installation_login(github_client, github_app, installation_id)
                 )
+            except InvalidAuthorizationCodeError as error:
+                raise HTTPException(
+                    status.HTTP_400_BAD_REQUEST, str(error), headers=no_store_headers
+                ) from error
             except OrganizationInstallationError as error:
                 raise HTTPException(
                     status.HTTP_422_UNPROCESSABLE_CONTENT, str(error), headers=no_store_headers
@@ -315,6 +344,7 @@ def create_app() -> FastAPI:
     github_app = settings.github_app
     github_client = create_github_api_client(settings.github_token)
     avatar_client = create_github_avatar_client()
+    oauth_client = create_github_oauth_client()
     supabase_client = create_supabase_client(settings.supabase_url, settings.supabase_secret_key)
 
     @asynccontextmanager
@@ -322,6 +352,7 @@ def create_app() -> FastAPI:
         yield
         await github_client.aclose()
         await avatar_client.aclose()
+        await oauth_client.aclose()
         await supabase_client.aclose()
 
     app = FastAPI(title="GitToken", lifespan=close_clients_on_shutdown)
@@ -409,7 +440,7 @@ def create_app() -> FastAPI:
             for entry in entries
         ]
 
-    _add_github_app_routes(app, github_app, github_client, supabase_client)
+    _add_github_app_routes(app, github_app, github_client, oauth_client, supabase_client)
 
     @app.get("/v1/agents")
     def get_agents() -> list[AgentResponse]:
