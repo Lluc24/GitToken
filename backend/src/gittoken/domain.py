@@ -97,6 +97,10 @@ class ProfileStoreError(Exception):
     pass
 
 
+class InvalidWebhookError(Exception):
+    pass
+
+
 GITHUB_LOGIN_PATTERN = "^[A-Za-z0-9][A-Za-z0-9-]{0,38}$"
 
 # A username that passed the format check at the boundary.
@@ -117,6 +121,20 @@ RepositoryId = NewType("RepositoryId", int)
 class PrivateRepository:
     repository_id: RepositoryId
     lines_added_by_agent: MappingProxyType[Agent, int]
+
+
+@dataclass(frozen=True)
+class AccountDisconnected:
+    github_id: GithubUserId
+
+
+@dataclass(frozen=True)
+class RepositoriesRevoked:
+    repository_ids: tuple[RepositoryId, *tuple[RepositoryId, ...]]
+
+
+# An account took back access, so the private repositories it covered must be forgotten.
+type ConsentWithdrawal = AccountDisconnected | RepositoriesRevoked
 
 
 @dataclass(frozen=True)

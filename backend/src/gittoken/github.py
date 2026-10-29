@@ -1,10 +1,12 @@
 import asyncio
+import hmac
 from collections import Counter
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from hashlib import sha256
 from types import MappingProxyType
-from typing import NewType, Self
+from typing import Literal, NewType, Self
 
 import httpx
 import jwt
@@ -13,13 +15,17 @@ from cryptography.hazmat.primitives.serialization import load_pem_private_key
 from pydantic import BaseModel, Field, SecretStr, TypeAdapter, ValidationError, model_validator
 
 from gittoken.domain import (
+    AccountDisconnected,
     Agent,
     Avatar,
+    ConsentWithdrawal,
     GithubProfile,
     GithubRequestError,
     GithubUserId,
+    InvalidWebhookError,
     PrivateRepository,
     ProfileNotFoundError,
+    RepositoriesRevoked,
     RepositoryId,
     VerifiedGithubUsername,
     find_agent,
@@ -490,6 +496,76 @@ async def fetch_private_repositories(
             for repository, count in zip(repositories, counts, strict=True)
         )
     return ()
+
+
+class _WebhookAction(BaseModel):
+    action: str
+
+
+class _EventAccount(BaseModel):
+    id: int
+    type: Literal["User", "Organization"]
+
+
+class _InstalledAccount(BaseModel):
+    account: _EventAccount
+
+
+class _InstallationEvent(BaseModel):
+    installation: _InstalledAccount
+
+
+class _RepositoryReference(BaseModel):
+    id: int = Field(gt=0)
+
+
+class _RepositoriesRemovedEvent(BaseModel):
+    repositories_removed: list[_RepositoryReference] = Field(min_length=1)
+
+
+class _RepositoryEvent(BaseModel):
+    repository: _RepositoryReference
+
+
+def _parse_signed_webhook(event_name: str, payload: bytes) -> ConsentWithdrawal | None:
+    if event_name in {"installation", "installation_repositories", "repository"}:
+        match event_name, _WebhookAction.model_validate_json(payload).action:
+            case "installation", "deleted" | "suspend":
+                account = _InstallationEvent.model_validate_json(payload).installation.account
+                if account.type == "User":
+                    return AccountDisconnected(GithubUserId(account.id))
+            case "installation_repositories", "removed":
+                first_repository, *other_repositories = (
+                    _RepositoriesRemovedEvent.model_validate_json(payload).repositories_removed
+                )
+                return RepositoriesRevoked(
+                    (
+                        RepositoryId(first_repository.id),
+                        *(RepositoryId(repository.id) for repository in other_repositories),
+                    )
+                )
+            case "repository", "publicized" | "deleted" | "transferred":
+                repository = _RepositoryEvent.model_validate_json(payload).repository
+                return RepositoriesRevoked((RepositoryId(repository.id),))
+    return None
+
+
+def parse_webhook(
+    webhook_secret: SecretStr, event_name: str, signature: str, payload: bytes
+) -> ConsentWithdrawal | None:
+    """Post: the consent the event withdraws, None for an event that withdraws nothing, or
+    InvalidWebhookError when the payload is not signed with webhook_secret or is malformed."""
+    expected_signature = (
+        b"sha256="
+        + hmac.new(webhook_secret.get_secret_value().encode(), payload, sha256).hexdigest().encode()
+    )
+    # Starlette decodes headers as latin-1; bytes keep a non-ASCII header a mismatch, not a crash.
+    if not hmac.compare_digest(expected_signature, signature.encode("latin-1")):
+        raise InvalidWebhookError("the webhook signature does not match the payload")
+    try:
+        return _parse_signed_webhook(event_name, payload)
+    except ValidationError as error:
+        raise InvalidWebhookError(f"the {event_name!r} webhook has an unexpected shape") from error
 
 
 async def fetch_avatar(avatar_client: GithubAvatarClient, login: VerifiedGithubUsername) -> Avatar:
