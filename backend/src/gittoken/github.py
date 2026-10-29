@@ -397,12 +397,12 @@ _INSTALLATION_REPOSITORIES = TypeAdapter(_InstallationRepositories)
 
 
 async def _request_rest[Body](
-    github_client: httpx.AsyncClient,
+    client: GithubApiClient | GithubOauthClient,
     request: httpx.Request,
     body_adapter: TypeAdapter[Body],
 ) -> Body:
     try:
-        response = await github_client.send(request)
+        response = await client.send(request)
         response.raise_for_status()
     except httpx.HTTPError as error:
         raise GithubRequestError(
@@ -470,8 +470,8 @@ async def fetch_personal_installation(
     installation_id: InstallationId,
     now: datetime,
 ) -> PersonalInstallation:
-    """Post: the installation's personal account, InstallationNotFoundError when the app has no such installation, or
-    OrganizationInstallationError for an organization's installation."""
+    """Post: the installation's personal account, InstallationNotFoundError when the app has no
+    such installation, or OrganizationInstallationError for an organization's installation."""
     installation = await _fetch_installation(
         github_client,
         _app_authorization(github_app, now),
@@ -495,46 +495,21 @@ class _UserAccessToken(BaseModel):
     access_token: SecretStr
 
 
-class _OauthError(BaseModel):
-    error: str
+class _BadVerificationCode(BaseModel):
+    error: Literal["bad_verification_code"]
 
 
 class _AuthenticatedUser(BaseModel):
     id: int
 
 
-_ACCESS_TOKEN_ANSWER = TypeAdapter(_UserAccessToken | _OauthError)
+_ACCESS_TOKEN_ANSWER = TypeAdapter(_UserAccessToken | _BadVerificationCode)
 _AUTHENTICATED_USER = TypeAdapter(_AuthenticatedUser)
 
 
-async def fetch_authorizing_user_id(
-    oauth_client: GithubOauthClient,
-    github_client: GithubApiClient,
-    github_app: GithubApp,
-    code: GithubAuthorizationCode,
-) -> GithubUserId:
-    """Post: the id of the GitHub user who authorized the app with code, or
-    InvalidAuthorizationCodeError for a used, expired or forged code. The user's token is
-    revoked before returning."""
-    token_request = oauth_client.build_request(
-        "POST",
-        "/login/oauth/access_token",
-        data={
-            "client_id": github_app.client_id,
-            "client_secret": github_app.client_secret.get_secret_value(),
-            "code": code,
-        },
-    )
-    answer = await _request_rest(oauth_client, token_request, _ACCESS_TOKEN_ANSWER)
-    if isinstance(answer, _OauthError):
-        raise InvalidAuthorizationCodeError(
-            f"GitHub rejected the authorization code: {answer.error}"
-        )
-    access_token = answer.access_token.get_secret_value()
-    user_request = github_client.build_request(
-        "GET", "/user", headers={**_REST_HEADERS, "Authorization": f"Bearer {access_token}"}
-    )
-    user = await _request_rest(github_client, user_request, _AUTHENTICATED_USER)
+async def _revoke_user_token(
+    github_client: GithubApiClient, github_app: GithubApp, access_token: str
+) -> None:
     try:
         response = await github_client.request(
             "DELETE",
@@ -546,6 +521,38 @@ async def fetch_authorizing_user_id(
         response.raise_for_status()
     except httpx.HTTPError as error:
         raise GithubRequestError("GitHub could not revoke the user's token") from error
+
+
+async def fetch_authorizing_user_id(
+    oauth_client: GithubOauthClient,
+    github_client: GithubApiClient,
+    github_app: GithubApp,
+    code: GithubAuthorizationCode,
+) -> GithubUserId:
+    """Post: the id of the GitHub user who authorized the app with code, or
+    InvalidAuthorizationCodeError for a used, expired or forged code. Any other OAuth answer
+    raises GithubRequestError. The user's token is revoked whether or not reading the user
+    worked."""
+    token_request = oauth_client.build_request(
+        "POST",
+        "/login/oauth/access_token",
+        data={
+            "client_id": github_app.client_id,
+            "client_secret": github_app.client_secret.get_secret_value(),
+            "code": code,
+        },
+    )
+    answer = await _request_rest(oauth_client, token_request, _ACCESS_TOKEN_ANSWER)
+    if isinstance(answer, _BadVerificationCode):
+        raise InvalidAuthorizationCodeError("The GitHub authorization code is used or expired")
+    access_token = answer.access_token.get_secret_value()
+    user_request = github_client.build_request(
+        "GET", "/user", headers={**_REST_HEADERS, "Authorization": f"Bearer {access_token}"}
+    )
+    try:
+        user = await _request_rest(github_client, user_request, _AUTHENTICATED_USER)
+    finally:
+        await _revoke_user_token(github_client, github_app, access_token)
     return GithubUserId(user.id)
 
 

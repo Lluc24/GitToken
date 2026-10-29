@@ -1,5 +1,5 @@
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from time import perf_counter
 
 from loguru import logger
@@ -8,7 +8,7 @@ from gittoken.db import (
     SupabaseClient,
     delete_account_private_repositories,
     delete_private_repositories,
-    delete_profile,
+    delete_profile_saved_before,
     delete_renamed_user,
     fetch_cached_profile,
     fetch_leaderboard,
@@ -42,6 +42,10 @@ from gittoken.github import (
     fetch_private_repositories,
 )
 from gittoken.telemetry import tracer
+
+# A verified owner can authorize again at will, so a profile scanned this recently is kept to
+# spare the shared GitHub rate limit.
+_MINIMUM_RESCAN_INTERVAL = timedelta(minutes=1)
 
 
 async def lookup_profile(
@@ -168,15 +172,19 @@ async def finish_authorized_installation(
     authorization: InstallationAuthorization,
 ) -> VerifiedGithubUsername:
     """Post: the installation's personal login. Its cached profile is dropped, so the next lookup
-    rescans it, only when the user who authorized the app is the installation's own account."""
+    rescans it, only when the user who authorized the app is the installation's own account and
+    the profile is over a minute old."""
+    now = datetime.now(UTC)
     installation = await fetch_personal_installation(
-        github_client, github_app, authorization.installation_id, datetime.now(UTC)
+        github_client, github_app, authorization.installation_id, now
     )
     authorizing_user_id = await fetch_authorizing_user_id(
         oauth_client, github_client, github_app, authorization.code
     )
     if authorizing_user_id == installation.github_id:
-        await delete_profile(supabase_client, installation.github_id)
+        await delete_profile_saved_before(
+            supabase_client, installation.github_id, now - _MINIMUM_RESCAN_INTERVAL
+        )
     else:
         logger.bind(event="installation_authorized_by_another_user").warning(
             "Installation setup authorized by a user other than its account"
