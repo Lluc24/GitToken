@@ -1,7 +1,6 @@
 from datetime import UTC, datetime
 from time import perf_counter
 
-import httpx
 from loguru import logger
 
 from gittoken.db import (
@@ -19,12 +18,12 @@ from gittoken.domain import (
     ProfileStoreError,
     VerifiedGithubUsername,
 )
-from gittoken.github import fetch_github_profile
+from gittoken.github import GithubApiClient, fetch_github_profile
 from gittoken.telemetry import tracer
 
 
 async def lookup_profile(
-    github_token: str, supabase_client: SupabaseClient, login: VerifiedGithubUsername
+    github_client: GithubApiClient, supabase_client: SupabaseClient, login: VerifiedGithubUsername
 ) -> GithubProfile:
     started_at = perf_counter()
     now = datetime.now(UTC)
@@ -38,7 +37,7 @@ async def lookup_profile(
             with tracer.start_as_current_span(
                 "github.scan", record_exception=False, set_status_on_exception=False
             ):
-                profile = await fetch_github_profile(github_token, login)
+                profile = await fetch_github_profile(github_client, login)
             with tracer.start_as_current_span(
                 "profile.persist", record_exception=False, set_status_on_exception=False
             ):
@@ -49,7 +48,7 @@ async def lookup_profile(
             "Profile lookup returned no user"
         )
         raise
-    except (httpx.HTTPError, GithubRequestError, ProfileStoreError) as error:
+    except (GithubRequestError, ProfileStoreError) as error:
         logger.bind(
             event="profile_upstream_error",
             error_type=type(error).__name__,

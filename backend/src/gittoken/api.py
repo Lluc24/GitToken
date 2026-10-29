@@ -6,7 +6,6 @@ from contextlib import asynccontextmanager
 from functools import partial
 from typing import Annotated
 
-import httpx
 import sentry_sdk
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Path, Response, status
 from loguru import logger
@@ -35,7 +34,7 @@ from gittoken.domain import (
     Rarity,
     VerifiedGithubUsername,
 )
-from gittoken.github import fetch_avatar
+from gittoken.github import create_github_api_client, create_github_avatar_client, fetch_avatar
 from gittoken.telemetry import configure_tracing
 
 # Profiles are rescanned at most daily, so the CDN may keep these responses for a day.
@@ -128,7 +127,7 @@ async def _badge_response(
             svg = await render_card(lookup.result())
         except ProfileNotFoundError:
             return _badge_error_response(login, "No GitHub user with this name", theme)
-        except (httpx.HTTPError, GithubRequestError):
+        except GithubRequestError:
             return _badge_error_response(login, "GitHub is unavailable, retrying soon", theme)
         except ProfileStoreError:
             return _badge_error_response(login, "GitToken is unavailable, retrying soon", theme)
@@ -157,17 +156,19 @@ def create_app() -> FastAPI:
             traces_sample_rate=0,
         )
     configure_tracing(settings.otel_exporter_otlp_endpoint)
+    github_client = create_github_api_client(settings.github_token)
+    avatar_client = create_github_avatar_client()
     supabase_client = create_supabase_client(settings.supabase_url, settings.supabase_secret_key)
 
     @asynccontextmanager
     async def close_clients_on_shutdown(_: FastAPI) -> AsyncIterator[None]:
         yield
+        await github_client.aclose()
+        await avatar_client.aclose()
         await supabase_client.aclose()
 
     app = FastAPI(title="GitToken", lifespan=close_clients_on_shutdown)
-    lookup_profile_by_login = partial(
-        lookup_profile, settings.github_token.get_secret_value(), supabase_client
-    )
+    lookup_profile_by_login = partial(lookup_profile, github_client, supabase_client)
 
     @app.get("/v1/users/{login}")
     async def get_user_tokens(
@@ -180,7 +181,7 @@ def create_app() -> FastAPI:
             raise HTTPException(
                 status.HTTP_404_NOT_FOUND, str(error), headers={"Cache-Control": "no-store"}
             ) from error
-        except (httpx.HTTPError, GithubRequestError, ProfileStoreError) as error:
+        except (GithubRequestError, ProfileStoreError) as error:
             raise HTTPException(
                 status.HTTP_502_BAD_GATEWAY,
                 "Profile lookup unavailable",
@@ -218,7 +219,7 @@ def create_app() -> FastAPI:
         theme: Theme = Theme.DARK,
     ) -> Response:
         async def render_card(profile: GithubProfile) -> str:
-            avatar = await fetch_avatar(login)
+            avatar = await fetch_avatar(avatar_client, login)
             return render_profile_card(profile, avatar, theme)
 
         return await _badge_response(

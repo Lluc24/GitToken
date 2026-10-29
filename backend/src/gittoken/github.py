@@ -1,11 +1,10 @@
 import asyncio
 from collections import Counter
-from json import JSONDecodeError
 from types import MappingProxyType
-from typing import Self
+from typing import NewType, Self
 
 import httpx
-from pydantic import BaseModel, Field, ValidationError, model_validator
+from pydantic import BaseModel, Field, SecretStr, ValidationError, model_validator
 
 from gittoken.domain import (
     Agent,
@@ -18,15 +17,37 @@ from gittoken.domain import (
     find_agent,
 )
 
-_GRAPHQL_URL = "https://api.github.com/graphql"
-_AVATAR_URL = "https://avatars.githubusercontent.com/{login}"
+_API_URL = "https://api.github.com"
+_AVATAR_URL = "https://avatars.githubusercontent.com"
 # Twice the 276-pixel photo on the profile card, for high-density screens.
 _AVATAR_SIZE_PIXELS = 552
 _AVATAR_MEDIA_TYPES = frozenset({"image/png", "image/jpeg", "image/gif"})
 _TIMEOUT_SECONDS = 30
-_MAXIMUM_CONNECTIONS = 8
+_MAXIMUM_CONCURRENT_REPOSITORIES = 8
 # GitHub timestamps are UTC ISO 8601, so they compare correctly as strings.
 _COMMITS_SINCE = "2025-01-01T00:00:00Z"
+
+GithubApiClient = NewType("GithubApiClient", httpx.AsyncClient)
+
+# A client for GitHub's avatar host; a separate client so the API token never reaches it.
+GithubAvatarClient = NewType("GithubAvatarClient", httpx.AsyncClient)
+
+
+def create_github_api_client(token: SecretStr) -> GithubApiClient:
+    return GithubApiClient(
+        httpx.AsyncClient(
+            base_url=_API_URL,
+            headers={"Authorization": f"Bearer {token.get_secret_value()}"},
+            timeout=httpx.Timeout(_TIMEOUT_SECONDS, pool=None),
+        )
+    )
+
+
+def create_github_avatar_client() -> GithubAvatarClient:
+    return GithubAvatarClient(
+        httpx.AsyncClient(base_url=_AVATAR_URL, timeout=_TIMEOUT_SECONDS, follow_redirects=True)
+    )
+
 
 _REPOSITORIES_QUERY = """
 query($login: String!, $cursor: String) {
@@ -142,13 +163,18 @@ class _CommitsData(BaseModel):
 
 
 async def _query(
-    http_client: httpx.AsyncClient, query: str, variables: dict[str, str | None]
+    github_client: GithubApiClient, query: str, variables: dict[str, str | None]
 ) -> object:
-    response = await http_client.post(_GRAPHQL_URL, json={"query": query, "variables": variables})
-    response.raise_for_status()
     try:
-        result = _GraphqlResponse.model_validate(response.json())
-    except (JSONDecodeError, ValidationError) as error:
+        response = await github_client.post(
+            "/graphql", json={"query": query, "variables": variables}
+        )
+        response.raise_for_status()
+    except httpx.HTTPError as error:
+        raise GithubRequestError("GitHub could not answer the GraphQL query") from error
+    try:
+        result = _GraphqlResponse.model_validate_json(response.content)
+    except ValidationError as error:
         raise GithubRequestError("GitHub returned an invalid GraphQL response") from error
     if result.errors or result.data is None:
         raise GithubRequestError("GitHub could not complete the profile lookup")
@@ -156,7 +182,7 @@ async def _query(
 
 
 async def _count_repository_lines_added_by_agent(
-    http_client: httpx.AsyncClient, repository_id: str
+    github_client: GithubApiClient, repository_id: str
 ) -> Counter[Agent]:
     lines_added_by_agent: Counter[Agent] = Counter()
     cursor: str | None = None
@@ -164,7 +190,9 @@ async def _count_repository_lines_added_by_agent(
     while True:
         variables = {"repositoryId": repository_id, "since": _COMMITS_SINCE, "cursor": cursor}
         try:
-            data = _CommitsData.model_validate(await _query(http_client, _COMMITS_QUERY, variables))
+            data = _CommitsData.model_validate(
+                await _query(github_client, _COMMITS_QUERY, variables)
+            )
         except ValidationError as error:
             raise GithubRequestError("GitHub returned invalid commit data") from error
         if data.node.default_branch is None:
@@ -184,7 +212,7 @@ async def _count_repository_lines_added_by_agent(
 
 
 async def _fetch_repositories(
-    http_client: httpx.AsyncClient, login: VerifiedGithubUsername
+    github_client: GithubApiClient, login: VerifiedGithubUsername
 ) -> _User:
     repositories: list[_Repository] = []
     cursor: str | None = None
@@ -192,7 +220,7 @@ async def _fetch_repositories(
     while True:
         try:
             data = _UserData.model_validate(
-                await _query(http_client, _REPOSITORIES_QUERY, {"login": login, "cursor": cursor})
+                await _query(github_client, _REPOSITORIES_QUERY, {"login": login, "cursor": cursor})
             )
         except ValidationError as error:
             raise GithubRequestError("GitHub returned invalid repository data") from error
@@ -220,7 +248,7 @@ async def _fetch_repositories(
 
 
 async def _count_lines_added_by_agent(
-    http_client: httpx.AsyncClient, repositories: list[_Repository]
+    github_client: GithubApiClient, repositories: list[_Repository]
 ) -> MappingProxyType[Agent, int]:
     pending_repositories = iter(repositories)
     lines_added_by_agent: Counter[Agent] = Counter()
@@ -228,12 +256,12 @@ async def _count_lines_added_by_agent(
     async def count_next_repositories() -> None:
         for repository in pending_repositories:
             lines_added_by_agent.update(
-                await _count_repository_lines_added_by_agent(http_client, repository.id)
+                await _count_repository_lines_added_by_agent(github_client, repository.id)
             )
 
     workers = [
         asyncio.create_task(count_next_repositories())
-        for _ in range(min(_MAXIMUM_CONNECTIONS, len(repositories)))
+        for _ in range(min(_MAXIMUM_CONCURRENT_REPOSITORIES, len(repositories)))
     ]
     try:
         await asyncio.gather(*workers)
@@ -244,28 +272,23 @@ async def _count_lines_added_by_agent(
         await asyncio.gather(*workers, return_exceptions=True)
 
 
-async def fetch_github_profile(token: str, login: VerifiedGithubUsername) -> GithubProfile:
+async def fetch_github_profile(
+    github_client: GithubApiClient, login: VerifiedGithubUsername
+) -> GithubProfile:
     """Post: lines added by each agent in commits since 2025 across public non-fork repositories,
-    or ProfileNotFoundError. Incomplete GitHub responses raise GithubRequestError."""
-    async with httpx.AsyncClient(
-        headers={"Authorization": f"Bearer {token}"},
-        timeout=httpx.Timeout(_TIMEOUT_SECONDS, pool=None),
-        limits=httpx.Limits(max_connections=_MAXIMUM_CONNECTIONS),
-    ) as http_client:
-        user = await _fetch_repositories(http_client, login)
-        lines_added_by_agent = await _count_lines_added_by_agent(
-            http_client, user.repositories.nodes
-        )
+    or ProfileNotFoundError. Failed or incomplete GitHub responses raise GithubRequestError."""
+    user = await _fetch_repositories(github_client, login)
+    lines_added_by_agent = await _count_lines_added_by_agent(github_client, user.repositories.nodes)
     return GithubProfile(GithubUserId(user.database_id), login, lines_added_by_agent)
 
 
-async def fetch_avatar(login: VerifiedGithubUsername) -> Avatar:
-    """Post: the user's avatar image, or GithubRequestError for a non-image answer."""
-    async with httpx.AsyncClient(timeout=_TIMEOUT_SECONDS, follow_redirects=True) as http_client:
-        response = await http_client.get(
-            _AVATAR_URL.format(login=login), params={"size": _AVATAR_SIZE_PIXELS}
-        )
-    response.raise_for_status()
+async def fetch_avatar(avatar_client: GithubAvatarClient, login: VerifiedGithubUsername) -> Avatar:
+    """Post: the user's avatar image, or GithubRequestError for a failed or non-image answer."""
+    try:
+        response = await avatar_client.get(f"/{login}", params={"size": _AVATAR_SIZE_PIXELS})
+        response.raise_for_status()
+    except httpx.HTTPError as error:
+        raise GithubRequestError(f"GitHub could not serve the avatar of {login!r}") from error
     media_type = response.headers.get("Content-Type", "").split(";")[0].strip()
     if media_type not in _AVATAR_MEDIA_TYPES:
         raise GithubRequestError(f"GitHub returned an avatar of type {media_type!r}")
