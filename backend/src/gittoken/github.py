@@ -1,10 +1,16 @@
 import asyncio
 from collections import Counter
+from collections.abc import Mapping
+from dataclasses import dataclass
+from datetime import datetime, timedelta
 from types import MappingProxyType
 from typing import NewType, Self
 
 import httpx
-from pydantic import BaseModel, Field, SecretStr, ValidationError, model_validator
+import jwt
+from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey
+from cryptography.hazmat.primitives.serialization import load_pem_private_key
+from pydantic import BaseModel, Field, SecretStr, TypeAdapter, ValidationError, model_validator
 
 from gittoken.domain import (
     Agent,
@@ -12,7 +18,9 @@ from gittoken.domain import (
     GithubProfile,
     GithubRequestError,
     GithubUserId,
+    PrivateRepository,
     ProfileNotFoundError,
+    RepositoryId,
     VerifiedGithubUsername,
     find_agent,
 )
@@ -26,11 +34,34 @@ _TIMEOUT_SECONDS = 30
 _MAXIMUM_CONCURRENT_REPOSITORIES = 8
 # GitHub timestamps are UTC ISO 8601, so they compare correctly as strings.
 _COMMITS_SINCE = "2025-01-01T00:00:00Z"
+# GitHub rejects app tokens that expire more than 10 minutes ahead; a minute back absorbs clock drift.
+_APP_TOKEN_ISSUED_EARLIER = timedelta(minutes=1)
+_APP_TOKEN_LIFETIME = timedelta(minutes=9)
+_REST_HEADERS = MappingProxyType(
+    {"Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28"}
+)
+_REPOSITORIES_PER_PAGE = 100
 
 GithubApiClient = NewType("GithubApiClient", httpx.AsyncClient)
 
 # A client for GitHub's avatar host; a separate client so the API token never reaches it.
 GithubAvatarClient = NewType("GithubAvatarClient", httpx.AsyncClient)
+
+
+@dataclass(frozen=True)
+class GithubApp:
+    id: int
+    private_key: RSAPrivateKey
+    webhook_secret: SecretStr
+    slug: str
+
+
+def load_github_app_private_key(private_key_pem: SecretStr) -> RSAPrivateKey:
+    """Post: the RSA key, or ValueError naming what the PEM holds instead."""
+    private_key = load_pem_private_key(private_key_pem.get_secret_value().encode(), password=None)
+    if isinstance(private_key, RSAPrivateKey):
+        return private_key
+    raise ValueError(f"GITHUB_APP_PRIVATE_KEY holds a {type(private_key).__name__}, not an RSA key")
 
 
 def create_github_api_client(token: SecretStr) -> GithubApiClient:
@@ -163,11 +194,14 @@ class _CommitsData(BaseModel):
 
 
 async def _query(
-    github_client: GithubApiClient, query: str, variables: dict[str, str | None]
+    github_client: GithubApiClient,
+    query: str,
+    variables: dict[str, str | None],
+    headers: Mapping[str, str],
 ) -> object:
     try:
         response = await github_client.post(
-            "/graphql", json={"query": query, "variables": variables}
+            "/graphql", json={"query": query, "variables": variables}, headers=headers
         )
         response.raise_for_status()
     except httpx.HTTPError as error:
@@ -182,7 +216,7 @@ async def _query(
 
 
 async def _count_repository_lines_added_by_agent(
-    github_client: GithubApiClient, repository_id: str
+    github_client: GithubApiClient, repository_id: str, headers: Mapping[str, str]
 ) -> Counter[Agent]:
     lines_added_by_agent: Counter[Agent] = Counter()
     cursor: str | None = None
@@ -191,7 +225,7 @@ async def _count_repository_lines_added_by_agent(
         variables = {"repositoryId": repository_id, "since": _COMMITS_SINCE, "cursor": cursor}
         try:
             data = _CommitsData.model_validate(
-                await _query(github_client, _COMMITS_QUERY, variables)
+                await _query(github_client, _COMMITS_QUERY, variables, headers)
             )
         except ValidationError as error:
             raise GithubRequestError("GitHub returned invalid commit data") from error
@@ -220,7 +254,9 @@ async def _fetch_repositories(
     while True:
         try:
             data = _UserData.model_validate(
-                await _query(github_client, _REPOSITORIES_QUERY, {"login": login, "cursor": cursor})
+                await _query(
+                    github_client, _REPOSITORIES_QUERY, {"login": login, "cursor": cursor}, {}
+                )
             )
         except ValidationError as error:
             raise GithubRequestError("GitHub returned invalid repository data") from error
@@ -247,25 +283,26 @@ async def _fetch_repositories(
         cursor = next_cursor
 
 
-async def _count_lines_added_by_agent(
-    github_client: GithubApiClient, repositories: list[_Repository]
-) -> MappingProxyType[Agent, int]:
-    pending_repositories = iter(repositories)
-    lines_added_by_agent: Counter[Agent] = Counter()
+async def _count_repositories_lines_added_by_agent(
+    github_client: GithubApiClient, repository_ids: list[str], headers: Mapping[str, str]
+) -> list[Counter[Agent]]:
+    """Post: one count per repository, in the order of repository_ids."""
+    pending_repositories = iter(enumerate(repository_ids))
+    counts: list[Counter[Agent]] = [Counter() for _ in repository_ids]
 
     async def count_next_repositories() -> None:
-        for repository in pending_repositories:
-            lines_added_by_agent.update(
-                await _count_repository_lines_added_by_agent(github_client, repository.id)
+        for index, repository_id in pending_repositories:
+            counts[index] = await _count_repository_lines_added_by_agent(
+                github_client, repository_id, headers
             )
 
     workers = [
         asyncio.create_task(count_next_repositories())
-        for _ in range(min(_MAXIMUM_CONCURRENT_REPOSITORIES, len(repositories)))
+        for _ in range(min(_MAXIMUM_CONCURRENT_REPOSITORIES, len(repository_ids)))
     ]
     try:
         await asyncio.gather(*workers)
-        return MappingProxyType(dict(lines_added_by_agent))
+        return counts
     finally:
         for worker in workers:
             worker.cancel()
@@ -276,10 +313,183 @@ async def fetch_github_profile(
     github_client: GithubApiClient, login: VerifiedGithubUsername
 ) -> GithubProfile:
     """Post: lines added by each agent in commits since 2025 across public non-fork repositories,
-    or ProfileNotFoundError. Failed or incomplete GitHub responses raise GithubRequestError."""
+    with no private repositories, or ProfileNotFoundError. Failed or incomplete GitHub responses
+    raise GithubRequestError."""
     user = await _fetch_repositories(github_client, login)
-    lines_added_by_agent = await _count_lines_added_by_agent(github_client, user.repositories.nodes)
-    return GithubProfile(GithubUserId(user.database_id), login, lines_added_by_agent)
+    counts = await _count_repositories_lines_added_by_agent(
+        github_client, [repository.id for repository in user.repositories.nodes], {}
+    )
+    return GithubProfile(
+        GithubUserId(user.database_id), login, MappingProxyType(dict(sum(counts, Counter()))), ()
+    )
+
+
+class _Account(BaseModel):
+    id: int
+
+
+class _Installation(BaseModel):
+    id: int
+    account: _Account
+    suspended_at: str | None
+
+
+class _InstallationToken(BaseModel):
+    token: SecretStr
+
+
+class _Owner(BaseModel):
+    id: int
+
+
+class _InstallationRepository(BaseModel):
+    id: int = Field(gt=0)
+    node_id: str
+    private: bool
+    fork: bool
+    pushed_at: str | None
+    owner: _Owner
+
+
+class _InstallationRepositories(BaseModel):
+    total_count: int = Field(ge=0)
+    repositories: list[_InstallationRepository]
+
+
+_INSTALLATION_TOKEN = TypeAdapter(_InstallationToken)
+_INSTALLATION_REPOSITORIES = TypeAdapter(_InstallationRepositories)
+
+
+async def _request_rest[Body](
+    github_client: GithubApiClient,
+    request: httpx.Request,
+    body_adapter: TypeAdapter[Body],
+) -> Body:
+    try:
+        response = await github_client.send(request)
+        response.raise_for_status()
+    except httpx.HTTPError as error:
+        raise GithubRequestError(
+            f"GitHub could not complete {request.method} {request.url.path}"
+        ) from error
+    try:
+        return body_adapter.validate_json(response.content)
+    except ValidationError as error:
+        raise GithubRequestError(f"GitHub answered {request.url.path} unexpectedly") from error
+
+
+def _app_authorization(github_app: GithubApp, now: datetime) -> dict[str, str]:
+    app_token = jwt.encode(
+        {
+            "iat": int((now - _APP_TOKEN_ISSUED_EARLIER).timestamp()),
+            "exp": int((now + _APP_TOKEN_LIFETIME).timestamp()),
+            "iss": str(github_app.id),
+        },
+        github_app.private_key,
+        algorithm="RS256",
+    )
+    return {**_REST_HEADERS, "Authorization": f"Bearer {app_token}"}
+
+
+async def _fetch_user_installation(
+    github_client: GithubApiClient, app_authorization: Mapping[str, str], login: str
+) -> _Installation | None:
+    """Post: the app's installation on the account, or None when the account has not installed it."""
+    request = github_client.build_request(
+        "GET", f"/users/{login}/installation", headers=app_authorization
+    )
+    try:
+        response = await github_client.send(request)
+    except httpx.HTTPError as error:
+        raise GithubRequestError(
+            f"GitHub could not look up the installation of {login!r}"
+        ) from error
+    if response.status_code != httpx.codes.NOT_FOUND:
+        try:
+            response.raise_for_status()
+            return _Installation.model_validate_json(response.content)
+        except (httpx.HTTPError, ValidationError) as error:
+            raise GithubRequestError(
+                f"GitHub answered the installation of {login!r} unexpectedly"
+            ) from error
+    return None
+
+
+async def _fetch_installation_repositories(
+    github_client: GithubApiClient, installation_authorization: Mapping[str, str]
+) -> list[_InstallationRepository]:
+    repositories: list[_InstallationRepository] = []
+    page = 1
+    while True:
+        request = github_client.build_request(
+            "GET",
+            "/installation/repositories",
+            params={"per_page": _REPOSITORIES_PER_PAGE, "page": page},
+            headers=installation_authorization,
+        )
+        body = await _request_rest(github_client, request, TypeAdapter(_InstallationRepositories))
+        repositories.extend(body.repositories)
+        if len(repositories) >= body.total_count or not body.repositories:
+            return repositories
+        page += 1
+
+
+async def _revoke_installation_token(
+    github_client: GithubApiClient, installation_authorization: Mapping[str, str]
+) -> None:
+    try:
+        response = await github_client.delete(
+            "/installation/token", headers=installation_authorization
+        )
+        response.raise_for_status()
+    except httpx.HTTPError as error:
+        raise GithubRequestError("GitHub could not revoke the installation token") from error
+
+
+async def fetch_private_repositories(
+    github_client: GithubApiClient, github_app: GithubApp, profile: GithubProfile, now: datetime
+) -> tuple[PrivateRepository, ...]:
+    """Post: lines added by each agent since 2025 in every private non-fork repository the
+    profile's account owns and granted to the app; empty when the account has not installed it
+    or GitHub suspended the installation. The installation token is revoked before returning."""
+    installation = await _fetch_user_installation(
+        github_client, _app_authorization(github_app, now), profile.login
+    )
+    if installation is not None and installation.suspended_at is None:
+        if installation.account.id != profile.github_id:
+            raise GithubRequestError(f"the installation of {profile.login!r} is on another account")
+        token_request = github_client.build_request(
+            "POST",
+            f"/app/installations/{installation.id}/access_tokens",
+            headers=_app_authorization(github_app, now),
+        )
+        installation_token = await _request_rest(github_client, token_request, _INSTALLATION_TOKEN)
+        installation_authorization = {
+            **_REST_HEADERS,
+            "Authorization": f"Bearer {installation_token.token.get_secret_value()}",
+        }
+        repositories = [
+            repository
+            for repository in await _fetch_installation_repositories(
+                github_client, installation_authorization
+            )
+            if repository.private
+            and not repository.fork
+            and repository.owner.id == profile.github_id
+            and repository.pushed_at is not None
+            and repository.pushed_at >= _COMMITS_SINCE
+        ]
+        counts = await _count_repositories_lines_added_by_agent(
+            github_client,
+            [repository.node_id for repository in repositories],
+            installation_authorization,
+        )
+        await _revoke_installation_token(github_client, installation_authorization)
+        return tuple(
+            PrivateRepository(RepositoryId(repository.id), MappingProxyType(dict(count)))
+            for repository, count in zip(repositories, counts, strict=True)
+        )
+    return ()
 
 
 async def fetch_avatar(avatar_client: GithubAvatarClient, login: VerifiedGithubUsername) -> Avatar:

@@ -1,3 +1,4 @@
+from collections import Counter
 from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import StrEnum
@@ -108,11 +109,34 @@ Avatar = NewType("Avatar", bytes)
 GithubUserId = NewType("GithubUserId", int)
 
 
+# GitHub's immutable numeric repository id; names are never stored.
+RepositoryId = NewType("RepositoryId", int)
+
+
+@dataclass(frozen=True)
+class PrivateRepository:
+    repository_id: RepositoryId
+    lines_added_by_agent: MappingProxyType[Agent, int]
+
+
 @dataclass(frozen=True)
 class GithubProfile:
     github_id: GithubUserId
     login: VerifiedGithubUsername
-    lines_added_by_agent: MappingProxyType[Agent, int]
+    public_lines_added_by_agent: MappingProxyType[Agent, int]
+    private_repositories: tuple[PrivateRepository, ...]
+
+    @property
+    def lines_added_by_agent(self) -> dict[Agent, int]:
+        """Post: public and private lines added, summed per agent."""
+        lines_added_by_agent = Counter(self.public_lines_added_by_agent)
+        for private_repository in self.private_repositories:
+            lines_added_by_agent.update(private_repository.lines_added_by_agent)
+        return dict(lines_added_by_agent)
+
+    @property
+    def includes_private_repositories(self) -> bool:
+        return len(self.private_repositories) > 0
 
     @property
     def total_tokens(self) -> int:
