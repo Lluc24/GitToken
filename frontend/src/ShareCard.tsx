@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { profileCardPath } from "./badges";
+import { profileCardPath, withConnectedKey } from "./badges";
 import { formatTokens } from "./format";
 import { pressableClassName } from "./glass";
 import { type Theme, useTheme } from "./theme";
@@ -8,11 +8,16 @@ import { type Theme, useTheme } from "./theme";
 type ShareCardProps = {
   login: string;
   totalTokens: number;
+  connectedKey: string;
 };
 
-async function renderCardPng(login: string, theme: Theme): Promise<File> {
+async function renderCardPng(
+  login: string,
+  theme: Theme,
+  connectedKey: string,
+): Promise<File> {
   const card = new Image();
-  card.src = profileCardPath(login, theme);
+  card.src = withConnectedKey(profileCardPath(login, theme), connectedKey);
   await card.decode();
   const canvas = document.createElement("canvas");
   canvas.width = card.naturalWidth * 2;
@@ -27,7 +32,11 @@ async function renderCardPng(login: string, theme: Theme): Promise<File> {
   return new File([blob], `${login}-gittoken.png`, { type: "image/png" });
 }
 
-export function ShareCard({ login, totalTokens }: ShareCardProps) {
+export function ShareCard({
+  login,
+  totalTokens,
+  connectedKey,
+}: ShareCardProps) {
   const [status, setStatus] = useState("");
   const theme = useTheme();
   const [cardFile, setCardFile] = useState<File | null>(null);
@@ -37,7 +46,7 @@ export function ShareCard({ login, totalTokens }: ShareCardProps) {
   // Safari only opens the share sheet right after a click, so the image is ready before it.
   useEffect(() => {
     let isCurrent = true;
-    renderCardPng(login, theme)
+    renderCardPng(login, theme, connectedKey)
       .then((file) => {
         if (isCurrent) {
           setCardFile(file);
@@ -51,7 +60,7 @@ export function ShareCard({ login, totalTokens }: ShareCardProps) {
     return () => {
       isCurrent = false;
     };
-  }, [login, theme]);
+  }, [login, theme, connectedKey]);
 
   async function share() {
     if (typeof navigator.share === "function") {
