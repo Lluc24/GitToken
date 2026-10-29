@@ -1,6 +1,7 @@
 from collections import Counter
 from collections.abc import Iterable
 from dataclasses import dataclass
+from datetime import datetime
 from enum import StrEnum
 from types import MappingProxyType
 from typing import NewType
@@ -101,6 +102,14 @@ class InvalidWebhookError(Exception):
     pass
 
 
+class InstallationNotFoundError(Exception):
+    pass
+
+
+class OrganizationInstallationError(Exception):
+    pass
+
+
 GITHUB_LOGIN_PATTERN = "^[A-Za-z0-9][A-Za-z0-9-]{0,38}$"
 
 # A username that passed the format check at the boundary.
@@ -111,6 +120,17 @@ Avatar = NewType("Avatar", bytes)
 
 # GitHub's immutable numeric user id; logins can be renamed.
 GithubUserId = NewType("GithubUserId", int)
+
+
+# GitHub's id for one account's installation of the GitHub App.
+InstallationId = NewType("InstallationId", int)
+
+
+@dataclass(frozen=True)
+class PersonalInstallation:
+    github_id: GithubUserId
+    login: VerifiedGithubUsername
+    updated_at: datetime
 
 
 # GitHub's immutable numeric repository id; names are never stored.

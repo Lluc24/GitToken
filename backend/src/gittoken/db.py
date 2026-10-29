@@ -231,6 +231,19 @@ async def save_total_tokens(supabase_client: SupabaseClient, profile: GithubProf
     await _send(supabase_client, request)
 
 
+async def delete_profile_saved_before(
+    supabase_client: SupabaseClient, github_id: GithubUserId, saved_before: datetime
+) -> None:
+    """Post: if the account's profile was saved before saved_before, it and its private
+    repositories are gone, so the next lookup rescans it."""
+    request = supabase_client.build_request(
+        "DELETE",
+        "/users",
+        params={"github_id": f"eq.{github_id}", "fetched_at": f"lt.{saved_before.isoformat()}"},
+    )
+    await _send(supabase_client, request)
+
+
 class _DeletedPrivateRepository(BaseModel):
     github_id: int
 

@@ -1,5 +1,5 @@
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from time import perf_counter
 
 from loguru import logger
@@ -8,6 +8,7 @@ from gittoken.db import (
     SupabaseClient,
     delete_account_private_repositories,
     delete_private_repositories,
+    delete_profile_saved_before,
     delete_renamed_user,
     fetch_cached_profile,
     fetch_leaderboard,
@@ -21,6 +22,7 @@ from gittoken.domain import (
     ConsentWithdrawal,
     GithubProfile,
     GithubRequestError,
+    InstallationId,
     LeaderboardEntry,
     ProfileNotFoundError,
     ProfileStoreError,
@@ -33,9 +35,14 @@ from gittoken.github import (
     GithubAvatarClient,
     fetch_avatar,
     fetch_github_profile,
+    fetch_personal_installation,
     fetch_private_repositories,
 )
 from gittoken.telemetry import tracer
+
+# A profile scanned this recently is kept after a setup visit, so the unauthenticated setup URL
+# cannot force a rescan more often than this.
+_MINIMUM_RESCAN_INTERVAL = timedelta(minutes=1)
 
 
 async def lookup_profile(
@@ -142,3 +149,23 @@ async def withdraw_consent(supabase_client: SupabaseClient, withdrawal: ConsentW
         affected_account_count=len(affected_github_ids),
         duration_seconds=perf_counter() - started_at,
     ).info("Private repositories forgotten")
+
+
+async def finish_installation(
+    github_client: GithubApiClient,
+    supabase_client: SupabaseClient,
+    github_app: GithubApp,
+    installation_id: InstallationId,
+) -> VerifiedGithubUsername:
+    """Post: the installation's personal login. Its cached profile is dropped if it predates the
+    installation's last change or the last minute, so the next lookup rescans it."""
+    now = datetime.now(UTC)
+    installation = await fetch_personal_installation(
+        github_client, github_app, installation_id, now
+    )
+    await delete_profile_saved_before(
+        supabase_client,
+        installation.github_id,
+        max(installation.updated_at, now - _MINIMUM_RESCAN_INTERVAL),
+    )
+    return installation.login

@@ -12,9 +12,18 @@ import httpx
 import jwt
 from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey
 from cryptography.hazmat.primitives.serialization import load_pem_private_key
-from pydantic import BaseModel, Field, SecretStr, TypeAdapter, ValidationError, model_validator
+from pydantic import (
+    AwareDatetime,
+    BaseModel,
+    Field,
+    SecretStr,
+    TypeAdapter,
+    ValidationError,
+    model_validator,
+)
 
 from gittoken.domain import (
+    GITHUB_LOGIN_PATTERN,
     AccountDisconnected,
     Agent,
     Avatar,
@@ -22,7 +31,11 @@ from gittoken.domain import (
     GithubProfile,
     GithubRequestError,
     GithubUserId,
+    InstallationId,
+    InstallationNotFoundError,
     InvalidWebhookError,
+    OrganizationInstallationError,
+    PersonalInstallation,
     PrivateRepository,
     ProfileNotFoundError,
     RepositoriesRevoked,
@@ -332,12 +345,15 @@ async def fetch_github_profile(
 
 class _Account(BaseModel):
     id: int
+    login: str = Field(pattern=GITHUB_LOGIN_PATTERN)
+    type: Literal["User", "Organization"]
 
 
 class _Installation(BaseModel):
     id: int
     account: _Account
     suspended_at: str | None
+    updated_at: AwareDatetime
 
 
 class _InstallationToken(BaseModel):
@@ -397,27 +413,21 @@ def _app_authorization(github_app: GithubApp, now: datetime) -> dict[str, str]:
     return {**_REST_HEADERS, "Authorization": f"Bearer {app_token}"}
 
 
-async def _fetch_user_installation(
-    github_client: GithubApiClient, app_authorization: Mapping[str, str], login: str
+async def _fetch_installation(
+    github_client: GithubApiClient, app_authorization: Mapping[str, str], path: str
 ) -> _Installation | None:
-    """Post: the app's installation on the account, or None when the account has not installed it."""
-    request = github_client.build_request(
-        "GET", f"/users/{login}/installation", headers=app_authorization
-    )
+    """Post: the installation at path, or None when GitHub has no such installation."""
+    request = github_client.build_request("GET", path, headers=app_authorization)
     try:
         response = await github_client.send(request)
     except httpx.HTTPError as error:
-        raise GithubRequestError(
-            f"GitHub could not look up the installation of {login!r}"
-        ) from error
+        raise GithubRequestError(f"GitHub could not look up {path}") from error
     if response.status_code != httpx.codes.NOT_FOUND:
         try:
             response.raise_for_status()
             return _Installation.model_validate_json(response.content)
         except (httpx.HTTPError, ValidationError) as error:
-            raise GithubRequestError(
-                f"GitHub answered the installation of {login!r} unexpectedly"
-            ) from error
+            raise GithubRequestError(f"GitHub answered {path} unexpectedly") from error
     return None
 
 
@@ -440,6 +450,35 @@ async def _fetch_installation_repositories(
         page += 1
 
 
+async def fetch_personal_installation(
+    github_client: GithubApiClient,
+    github_app: GithubApp,
+    installation_id: InstallationId,
+    now: datetime,
+) -> PersonalInstallation:
+    """Post: the installation's personal account and when the installation last changed,
+    InstallationNotFoundError when the app has no such installation, or
+    OrganizationInstallationError for an organization's installation."""
+    installation = await _fetch_installation(
+        github_client,
+        _app_authorization(github_app, now),
+        f"/app/installations/{installation_id}",
+    )
+    if installation is not None:
+        if installation.account.type == "Organization":
+            raise OrganizationInstallationError(
+                f"GitToken scans personal accounts only, and {installation.account.login} is an "
+                f"organization. Uninstall the GitHub App from {installation.account.login}'s "
+                "settings."
+            )
+        return PersonalInstallation(
+            GithubUserId(installation.account.id),
+            VerifiedGithubUsername(installation.account.login),
+            installation.updated_at,
+        )
+    raise InstallationNotFoundError(f"the GitHub App has no installation {installation_id}")
+
+
 async def _revoke_installation_token(
     github_client: GithubApiClient, installation_authorization: Mapping[str, str]
 ) -> None:
@@ -458,8 +497,8 @@ async def fetch_private_repositories(
     """Post: lines added by each agent since 2025 in every private non-fork repository the
     profile's account owns and granted to the app; empty when the account has not installed it
     or GitHub suspended the installation. The installation token is revoked before returning."""
-    installation = await _fetch_user_installation(
-        github_client, _app_authorization(github_app, now), profile.login
+    installation = await _fetch_installation(
+        github_client, _app_authorization(github_app, now), f"/users/{profile.login}/installation"
     )
     if installation is not None and installation.suspended_at is None:
         if installation.account.id != profile.github_id:
@@ -502,13 +541,8 @@ class _WebhookAction(BaseModel):
     action: str
 
 
-class _EventAccount(BaseModel):
-    id: int
-    type: Literal["User", "Organization"]
-
-
 class _InstalledAccount(BaseModel):
-    account: _EventAccount
+    account: _Account
 
 
 class _InstallationEvent(BaseModel):

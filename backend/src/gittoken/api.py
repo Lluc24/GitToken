@@ -5,9 +5,21 @@ from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine
 from contextlib import asynccontextmanager
 from functools import partial
 from typing import Annotated, Self
+from uuid import uuid4
 
 import sentry_sdk
-from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Path, Request, Response, status
+from fastapi import (
+    BackgroundTasks,
+    FastAPI,
+    Header,
+    HTTPException,
+    Path,
+    Query,
+    Request,
+    Response,
+    status,
+)
+from fastapi.responses import RedirectResponse
 from loguru import logger
 from pydantic import BaseModel, Field, HttpUrl, PositiveInt, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -16,6 +28,7 @@ from sentry_sdk.integrations.loguru import LoguruIntegration
 from gittoken.application import (
     fetch_fresh_leaderboard,
     fetch_profile_avatar,
+    finish_installation,
     lookup_profile,
     withdraw_consent,
 )
@@ -34,13 +47,17 @@ from gittoken.domain import (
     Agent,
     GithubProfile,
     GithubRequestError,
+    InstallationId,
+    InstallationNotFoundError,
     InvalidWebhookError,
+    OrganizationInstallationError,
     ProfileNotFoundError,
     ProfileStoreError,
     Rarity,
     VerifiedGithubUsername,
 )
 from gittoken.github import (
+    GithubApiClient,
     GithubApp,
     create_github_api_client,
     create_github_avatar_client,
@@ -192,7 +209,10 @@ async def _badge_response(
 
 
 def _add_github_app_routes(
-    app: FastAPI, github_app: GithubApp | None, supabase_client: SupabaseClient
+    app: FastAPI,
+    github_app: GithubApp | None,
+    github_client: GithubApiClient,
+    supabase_client: SupabaseClient,
 ) -> None:
     @app.get("/v1/github-app")
     def get_github_app() -> GithubAppResponse:
@@ -204,6 +224,44 @@ def _add_github_app_routes(
             status.HTTP_503_SERVICE_UNAVAILABLE,
             "GitHub App is not configured",
             headers={"Cache-Control": "no-store"},
+        )
+
+    @app.get("/v1/github-app/setup")
+    async def finish_github_app_setup(
+        installation_id: Annotated[InstallationId, Query(gt=0)],
+    ) -> RedirectResponse:
+        """GitHub sends the browser here after an install or a repository change."""
+        no_store_headers = {"Cache-Control": "no-store"}
+        if github_app is not None:
+            try:
+                login = await finish_installation(
+                    github_client, supabase_client, github_app, installation_id
+                )
+            except OrganizationInstallationError as error:
+                raise HTTPException(
+                    status.HTTP_422_UNPROCESSABLE_CONTENT, str(error), headers=no_store_headers
+                ) from error
+            except InstallationNotFoundError as error:
+                raise HTTPException(
+                    status.HTTP_404_NOT_FOUND, str(error), headers=no_store_headers
+                ) from error
+            except (GithubRequestError, ProfileStoreError) as error:
+                raise HTTPException(
+                    status.HTTP_502_BAD_GATEWAY,
+                    "GitHub App setup unavailable",
+                    headers=no_store_headers,
+                ) from error
+            # A fresh key for the profile page to pass on to its API requests, past the CDN's
+            # copies from before the install.
+            return RedirectResponse(
+                f"/{login}?connected={uuid4().hex[:8]}",
+                status.HTTP_303_SEE_OTHER,
+                headers=no_store_headers,
+            )
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "GitHub App is not configured",
+            headers=no_store_headers,
         )
 
     @app.post("/v1/github-app/webhook", status_code=status.HTTP_204_NO_CONTENT)
@@ -351,7 +409,7 @@ def create_app() -> FastAPI:
             for entry in entries
         ]
 
-    _add_github_app_routes(app, github_app, supabase_client)
+    _add_github_app_routes(app, github_app, github_client, supabase_client)
 
     @app.get("/v1/agents")
     def get_agents() -> list[AgentResponse]:
