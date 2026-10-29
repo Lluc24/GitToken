@@ -72,10 +72,10 @@ export function ConnectGithubMenu() {
   const [isOpen, setIsOpen] = useState(false);
   const panelId = useId();
   return (
-    <div className="max-[359px]:hidden">
+    <div>
       <button
         type="button"
-        aria-label="Connect GitHub"
+        aria-label="GitHub"
         aria-expanded={isOpen}
         aria-controls={panelId}
         onClick={() => setIsOpen(!isOpen)}
@@ -89,6 +89,12 @@ export function ConnectGithubMenu() {
           className="absolute top-full right-0 mt-3 w-80 max-w-full rounded-3xl border border-white/90 bg-white/95 p-4 shadow-[0_24px_60px_-28px_rgb(15_23_42/0.4)] backdrop-blur-xl dark:border-white/20 dark:bg-night/95"
         >
           <ConnectGithub />
+          <a
+            href="https://github.com/Lluc24/GitToken"
+            className="mt-3 block border-night/10 border-t pt-3 text-center text-night/70 text-sm hover:text-night dark:border-white/10 dark:text-white/70 dark:hover:text-white"
+          >
+            GitToken's source on GitHub
+          </a>
         </div>
       )}
     </div>

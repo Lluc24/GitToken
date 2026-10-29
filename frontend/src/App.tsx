@@ -130,7 +130,7 @@ export function App() {
                 strokeWidth="2.5"
               />
             </svg>
-            GitToken
+            <span className="max-[359px]:sr-only">GitToken</span>
           </Link>
           <nav
             id="site-menu"
@@ -154,12 +154,6 @@ export function App() {
             >
               Badges
             </Link>
-            <a
-              href="https://github.com/Lluc24/GitToken"
-              className={`rounded-full px-4 py-2 text-night/80 dark:text-white/80 hover:bg-night/15 dark:hover:bg-white/15 hover:text-night dark:hover:text-white ${pressableClassName}`}
-            >
-              GitHub
-            </a>
           </nav>
           <div className="flex items-center gap-1">
             <ConnectGithubMenu />
