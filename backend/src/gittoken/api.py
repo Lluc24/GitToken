@@ -3,14 +3,15 @@ import logging
 import sys
 from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from functools import partial
-from typing import Annotated
+from typing import Annotated, Self
 
 import sentry_sdk
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Path, Response, status
 from loguru import logger
-from pydantic import BaseModel, HttpUrl, SecretStr
-from pydantic_settings import BaseSettings
+from pydantic import BaseModel, Field, HttpUrl, PositiveInt, SecretStr, model_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from sentry_sdk.integrations.loguru import LoguruIntegration
 
 from gittoken.application import fetch_fresh_leaderboard, fetch_profile_avatar, lookup_profile
@@ -46,12 +47,63 @@ _SCANNING_CACHE_CONTROL = "public, max-age=0, s-maxage=60"
 _BADGE_ERROR_CACHE_CONTROL = "public, max-age=0, s-maxage=600"
 
 
+@dataclass(frozen=True)
+class GithubApp:
+    id: int
+    private_key: SecretStr
+    webhook_secret: SecretStr
+    slug: str
+
+
 class ApiSettings(BaseSettings):
+    # Validation errors would otherwise echo the raw settings, secrets included, into the logs.
+    model_config = SettingsConfigDict(hide_input_in_errors=True, env_ignore_empty=True)
+
     github_token: SecretStr
     supabase_url: HttpUrl
     supabase_secret_key: SecretStr
     otel_exporter_otlp_endpoint: str = ""
     sentry_dsn: SecretStr = SecretStr("")
+    github_app_id: PositiveInt | None = None
+    github_app_private_key: SecretStr | None = None
+    github_webhook_secret: SecretStr | None = None
+    github_app_slug: str | None = Field(default=None, pattern="^[a-z0-9][a-z0-9-]*$")
+
+    @property
+    def github_app(self) -> GithubApp | None:
+        """Post: the GitHub App when all four of its settings are set, else None."""
+        if (
+            self.github_app_id is not None
+            and self.github_app_private_key is not None
+            and self.github_webhook_secret is not None
+            and self.github_app_slug is not None
+        ):
+            return GithubApp(
+                self.github_app_id,
+                self.github_app_private_key,
+                self.github_webhook_secret,
+                self.github_app_slug,
+            )
+        return None
+
+    @model_validator(mode="after")
+    def require_all_or_no_github_app_settings(self) -> Self:
+        github_app_settings = {
+            "GITHUB_APP_ID": self.github_app_id,
+            "GITHUB_APP_PRIVATE_KEY": self.github_app_private_key,
+            "GITHUB_WEBHOOK_SECRET": self.github_webhook_secret,
+            "GITHUB_APP_SLUG": self.github_app_slug,
+        }
+        missing_names = [name for name, value in github_app_settings.items() if value is None]
+        if 0 < len(missing_names) < len(github_app_settings):
+            raise ValueError(
+                f"Set all GitHub App settings or none; missing {', '.join(missing_names)}"
+            )
+        return self
+
+
+class GithubAppResponse(BaseModel):
+    install_url: str
 
 
 class ProfileTokensResponse(BaseModel):
@@ -250,6 +302,20 @@ def create_app() -> FastAPI:
             )
             for entry in entries
         ]
+
+    github_app = settings.github_app
+
+    @app.get("/v1/github-app")
+    def get_github_app() -> GithubAppResponse:
+        if github_app is not None:
+            return GithubAppResponse(
+                install_url=f"https://github.com/apps/{github_app.slug}/installations/new"
+            )
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "GitHub App is not configured",
+            headers={"Cache-Control": "no-store"},
+        )
 
     @app.get("/v1/agents")
     def get_agents() -> list[AgentResponse]:
