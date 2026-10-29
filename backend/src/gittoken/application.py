@@ -11,6 +11,7 @@ from gittoken.db import (
     save_profile,
 )
 from gittoken.domain import (
+    Avatar,
     GithubProfile,
     GithubRequestError,
     LeaderboardEntry,
@@ -18,7 +19,7 @@ from gittoken.domain import (
     ProfileStoreError,
     VerifiedGithubUsername,
 )
-from gittoken.github import GithubApiClient, fetch_github_profile
+from gittoken.github import GithubApiClient, GithubAvatarClient, fetch_avatar, fetch_github_profile
 from gittoken.telemetry import tracer
 
 
@@ -65,3 +66,19 @@ async def lookup_profile(
 
 async def fetch_fresh_leaderboard(supabase_client: SupabaseClient) -> tuple[LeaderboardEntry, ...]:
     return await fetch_leaderboard(supabase_client, datetime.now(UTC))
+
+
+async def fetch_profile_avatar(
+    avatar_client: GithubAvatarClient, login: VerifiedGithubUsername
+) -> Avatar:
+    started_at = perf_counter()
+    try:
+        avatar = await fetch_avatar(avatar_client, login)
+    except GithubRequestError as error:
+        logger.bind(
+            event="avatar_upstream_error",
+            error_type=type(error).__name__,
+            duration_seconds=perf_counter() - started_at,
+        ).warning("Avatar fetch failed")
+        raise
+    return avatar

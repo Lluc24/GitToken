@@ -13,7 +13,7 @@ from pydantic import BaseModel, HttpUrl, SecretStr
 from pydantic_settings import BaseSettings
 from sentry_sdk.integrations.loguru import LoguruIntegration
 
-from gittoken.application import fetch_fresh_leaderboard, lookup_profile
+from gittoken.application import fetch_fresh_leaderboard, fetch_profile_avatar, lookup_profile
 from gittoken.badge import (
     Theme,
     render_badge,
@@ -34,7 +34,7 @@ from gittoken.domain import (
     Rarity,
     VerifiedGithubUsername,
 )
-from gittoken.github import create_github_api_client, create_github_avatar_client, fetch_avatar
+from gittoken.github import create_github_api_client, create_github_avatar_client
 from gittoken.telemetry import configure_tracing
 
 # Profiles are rescanned at most daily, so the CDN may keep these responses for a day.
@@ -219,7 +219,7 @@ def create_app() -> FastAPI:
         theme: Theme = Theme.DARK,
     ) -> Response:
         async def render_card(profile: GithubProfile) -> str:
-            avatar = await fetch_avatar(avatar_client, login)
+            avatar = await fetch_profile_avatar(avatar_client, login)
             return render_profile_card(profile, avatar, theme)
 
         return await _badge_response(
