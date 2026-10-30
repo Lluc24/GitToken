@@ -1,5 +1,5 @@
--- Rows saved before one-row profiles are stale; the next lookup rescans them and rewrites agents.
-update public.users set agents = '[]'::jsonb where agents is null;
+-- Every row is at most a day of cache, recomputed from GitHub on the next lookup.
+delete from public.users;
 
 alter table public.users
   alter column agents set not null,
