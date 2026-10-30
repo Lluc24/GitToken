@@ -4,5 +4,3 @@ delete from public.users where agents is null;
 alter table public.users
   alter column agents set not null,
   add constraint users_agents_is_array check (jsonb_typeof(agents) = 'array');
-
-drop table public.agents;
