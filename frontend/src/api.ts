@@ -1,15 +1,19 @@
 import { useQuery } from "@tanstack/react-query";
 import { z } from "zod";
+import { withConnectedKey } from "./badges";
 
 const rarity = z.enum(["common", "rare", "epic", "legendary", "champion"]);
 
 export type Rarity = z.infer<typeof rarity>;
 
+// includes_private_repositories is optional because the CDN may serve a profile cached before
+// private repository scans for up to s-maxage + stale-while-revalidate = 25 hours after the deploy.
 const profileTokensResponse = z.object({
   login: z.string(),
   total_tokens: z.number(),
   rarity,
   tokens_by_agent: z.record(z.string(), z.number()),
+  includes_private_repositories: z.boolean().optional(),
 });
 
 export type ProfileTokens = {
@@ -17,10 +21,16 @@ export type ProfileTokens = {
   totalTokens: number;
   rarity: Rarity;
   tokensByAgent: Record<string, number>;
+  includesPrivateRepositories: boolean;
 };
 
-async function fetchProfileTokens(login: string): Promise<ProfileTokens> {
-  const response = await fetch(`/v1/users/${encodeURIComponent(login)}`);
+async function fetchProfileTokens(
+  login: string,
+  connectedKey: string,
+): Promise<ProfileTokens> {
+  const response = await fetch(
+    withConnectedKey(`/v1/users/${encodeURIComponent(login)}`, connectedKey),
+  );
   if (response.status === 404) {
     throw new Error(`No GitHub user named ${login}`);
   }
@@ -46,14 +56,15 @@ async function fetchProfileTokens(login: string): Promise<ProfileTokens> {
     totalTokens: body.total_tokens,
     rarity: body.rarity,
     tokensByAgent: body.tokens_by_agent,
+    includesPrivateRepositories: body.includes_private_repositories ?? false,
   };
 }
 
 /** Pre: login is not empty. */
-export function useProfileTokens(login: string) {
+export function useProfileTokens(login: string, connectedKey: string) {
   return useQuery({
-    queryKey: ["profile-tokens", login],
-    queryFn: () => fetchProfileTokens(login),
+    queryKey: ["profile-tokens", login, connectedKey],
+    queryFn: () => fetchProfileTokens(login, connectedKey),
     retry: false,
   });
 }

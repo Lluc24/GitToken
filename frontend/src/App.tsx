@@ -6,10 +6,11 @@ import {
   Routes,
   useNavigate,
   useParams,
+  useSearchParams,
 } from "react-router-dom";
 import { useProfileTokens } from "./api";
 import { BadgesPage } from "./BadgesPage";
-import { profileCardPath } from "./badges";
+import { profileCardPath, withConnectedKey } from "./badges";
 import { ConnectGithub, ConnectGithubMenu } from "./ConnectGithub";
 import { formatTokens } from "./format";
 import { glassClassName, pressableClassName } from "./glass";
@@ -19,8 +20,14 @@ import { ShareCard } from "./ShareCard";
 import { ThemeToggle } from "./ThemeToggle";
 import { useTheme } from "./theme";
 
-function ProfileTokensResult({ login }: { login: string }) {
-  const profileTokens = useProfileTokens(login);
+function ProfileTokensResult({
+  login,
+  connectedKey,
+}: {
+  login: string;
+  connectedKey: string;
+}) {
+  const profileTokens = useProfileTokens(login, connectedKey);
   const theme = useTheme();
 
   if (profileTokens.isPending) {
@@ -46,13 +53,23 @@ function ProfileTokensResult({ login }: { login: string }) {
   return (
     <section className="flex flex-col items-center gap-6">
       <img
-        src={profileCardPath(data.login, theme)}
+        src={withConnectedKey(profileCardPath(data.login, theme), connectedKey)}
         alt={`${data.login}: ${formatTokens(data.totalTokens)} estimated tokens, ${data.rarity}`}
         width={300}
         className="drop-shadow-[0_24px_40px_rgb(15_23_42/0.18)] dark:drop-shadow-[0_30px_50px_rgb(0_0_0/0.6)]"
       />
-      <ConnectGithub />
-      <ShareCard login={data.login} totalTokens={data.totalTokens} />
+      {data.includesPrivateRepositories ? (
+        <p className="text-night/60 text-sm dark:text-white/60">
+          Includes the private repos {data.login} granted to GitToken.
+        </p>
+      ) : (
+        <ConnectGithub />
+      )}
+      <ShareCard
+        login={data.login}
+        totalTokens={data.totalTokens}
+        connectedKey={connectedKey}
+      />
     </section>
   );
 }
@@ -63,6 +80,7 @@ function ProfilePage({
   onViewLogin: (login: string) => void;
 }) {
   const { login: submittedLogin = "" } = useParams();
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
 
   useEffect(() => onViewLogin(submittedLogin), [onViewLogin, submittedLogin]);
@@ -80,7 +98,12 @@ function ProfilePage({
           navigate(login === "" ? "/" : `/${encodeURIComponent(login)}`)
         }
       />
-      {submittedLogin !== "" && <ProfileTokensResult login={submittedLogin} />}
+      {submittedLogin !== "" && (
+        <ProfileTokensResult
+          login={submittedLogin}
+          connectedKey={searchParams.get("connected") ?? ""}
+        />
+      )}
     </main>
   );
 }
