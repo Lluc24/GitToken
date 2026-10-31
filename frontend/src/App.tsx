@@ -10,6 +10,7 @@ import {
 import { useProfileTokens } from "./api";
 import { BadgesPage } from "./BadgesPage";
 import { profileCardPath } from "./badges";
+import { ConnectGithub, ConnectGithubMenu } from "./ConnectGithub";
 import { formatTokens } from "./format";
 import { glassClassName, pressableClassName } from "./glass";
 import { Leaderboard } from "./Leaderboard";
@@ -50,6 +51,7 @@ function ProfileTokensResult({ login }: { login: string }) {
         width={300}
         className="drop-shadow-[0_24px_40px_rgb(15_23_42/0.18)] dark:drop-shadow-[0_30px_50px_rgb(0_0_0/0.6)]"
       />
+      <ConnectGithub />
       <ShareCard login={data.login} totalTokens={data.totalTokens} />
     </section>
   );
@@ -128,7 +130,7 @@ export function App() {
                 strokeWidth="2.5"
               />
             </svg>
-            GitToken
+            <span className="max-[359px]:sr-only">GitToken</span>
           </Link>
           <nav
             id="site-menu"
@@ -152,14 +154,9 @@ export function App() {
             >
               Badges
             </Link>
-            <a
-              href="https://github.com/Lluc24/GitToken"
-              className={`rounded-full px-4 py-2 text-night/80 dark:text-white/80 hover:bg-night/15 dark:hover:bg-white/15 hover:text-night dark:hover:text-white ${pressableClassName}`}
-            >
-              GitHub
-            </a>
           </nav>
           <div className="flex items-center gap-1">
+            <ConnectGithubMenu />
             <ThemeToggle />
             <button
               type="button"

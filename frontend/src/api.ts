@@ -102,3 +102,41 @@ export function useLeaderboard() {
     retry: false,
   });
 }
+
+const githubAppResponse = z.object({
+  install_url: z.url({ protocol: /^https$/, hostname: /^github\.com$/ }),
+});
+
+export type GithubApp =
+  | { isConfigured: true; installUrl: string }
+  | { isConfigured: false };
+
+async function fetchGithubApp(): Promise<GithubApp> {
+  const response = await fetch("/v1/github-app");
+  if (response.status === 503) {
+    return { isConfigured: false };
+  }
+  if (!response.ok) {
+    throw new Error(`The GitToken API answered ${response.status}`);
+  }
+  let rawBody: unknown;
+  try {
+    rawBody = await response.json();
+  } catch {
+    throw new Error("The GitToken API returned an unreadable response");
+  }
+  const parsed = githubAppResponse.safeParse(rawBody);
+  if (!parsed.success) {
+    throw new Error("The GitToken API returned an unexpected response");
+  }
+  return { isConfigured: true, installUrl: parsed.data.install_url };
+}
+
+export function useGithubApp() {
+  return useQuery({
+    queryKey: ["github-app"],
+    queryFn: fetchGithubApp,
+    retry: false,
+    staleTime: Number.POSITIVE_INFINITY,
+  });
+}
