@@ -6,18 +6,25 @@ from loguru import logger
 
 from gittoken.db import (
     SupabaseClient,
+    delete_account_private_repositories,
+    delete_private_repositories,
     delete_renamed_user,
     fetch_cached_profile,
     fetch_leaderboard,
+    fetch_stored_profiles,
     save_profile,
+    save_total_tokens,
 )
 from gittoken.domain import (
+    AccountDisconnected,
     Avatar,
+    ConsentWithdrawal,
     GithubProfile,
     GithubRequestError,
     LeaderboardEntry,
     ProfileNotFoundError,
     ProfileStoreError,
+    RepositoriesRevoked,
     VerifiedGithubUsername,
 )
 from gittoken.github import (
@@ -102,3 +109,36 @@ async def fetch_profile_avatar(
         ).warning("Avatar fetch failed")
         raise
     return avatar
+
+
+async def withdraw_consent(supabase_client: SupabaseClient, withdrawal: ConsentWithdrawal) -> None:
+    """Post: the withdrawn private repositories are forgotten and every affected account's
+    leaderboard total is recomputed from what remains. If the recompute fails after the delete, a
+    redelivered disconnect repairs the total; a repository revocation waits for the next scan."""
+    started_at = perf_counter()
+    try:
+        match withdrawal:
+            case AccountDisconnected(github_id):
+                await delete_account_private_repositories(supabase_client, github_id)
+                affected_github_ids = frozenset({github_id})
+            case RepositoriesRevoked(repository_ids):
+                affected_github_ids = await delete_private_repositories(
+                    supabase_client, repository_ids
+                )
+        if affected_github_ids:
+            for profile in await fetch_stored_profiles(supabase_client, affected_github_ids):
+                await save_total_tokens(supabase_client, profile)
+    except ProfileStoreError as error:
+        logger.bind(
+            event="consent_withdrawal_error",
+            withdrawal_type=type(withdrawal).__name__,
+            error_type=type(error).__name__,
+            duration_seconds=perf_counter() - started_at,
+        ).warning("Private repositories could not be forgotten")
+        raise
+    logger.bind(
+        event="consent_withdrawn",
+        withdrawal_type=type(withdrawal).__name__,
+        affected_account_count=len(affected_github_ids),
+        duration_seconds=perf_counter() - started_at,
+    ).info("Private repositories forgotten")

@@ -85,11 +85,28 @@ class _PrivateRepository(BaseModel):
 
 class _User(BaseModel):
     github_id: int
+    login: str = Field(pattern=GITHUB_LOGIN_PATTERN)
     agents: list[_UserAgent]
     private_repositories: list[_PrivateRepository]
 
 
 _USER_ROWS = TypeAdapter(list[_User])
+_USER_COLUMNS = "github_id,login,agents,private_repositories(repository_id,agents)"
+
+
+def _profile_from_user(user: _User, login: VerifiedGithubUsername) -> GithubProfile:
+    return GithubProfile(
+        GithubUserId(user.github_id),
+        login,
+        _lines_added_by_agent(user.agents),
+        tuple(
+            PrivateRepository(
+                RepositoryId(private_repository.repository_id),
+                _lines_added_by_agent(private_repository.agents),
+            )
+            for private_repository in user.private_repositories
+        ),
+    )
 
 
 async def fetch_cached_profile(
@@ -102,7 +119,7 @@ async def fetch_cached_profile(
         "GET",
         "/users",
         params={
-            "select": "github_id,agents,private_repositories(repository_id,agents)",
+            "select": _USER_COLUMNS,
             "login": f"eq.{login.lower()}",
             "fetched_at": f"gte.{fresh_since.isoformat()}",
             "agents": "not.is.null",
@@ -110,19 +127,23 @@ async def fetch_cached_profile(
     )
     users = _parse_rows(await _send(supabase_client, request), _USER_ROWS)
     if users:
-        return GithubProfile(
-            GithubUserId(users[0].github_id),
-            login,
-            _lines_added_by_agent(users[0].agents),
-            tuple(
-                PrivateRepository(
-                    RepositoryId(private_repository.repository_id),
-                    _lines_added_by_agent(private_repository.agents),
-                )
-                for private_repository in users[0].private_repositories
-            ),
-        )
+        return _profile_from_user(users[0], login)
     return None
+
+
+async def fetch_stored_profiles(
+    supabase_client: SupabaseClient, github_ids: frozenset[GithubUserId]
+) -> tuple[GithubProfile, ...]:
+    """Post: the saved profile of each github_id that has a users row, whatever its age, with the
+    login as stored."""
+    joined_github_ids = ",".join(str(github_id) for github_id in github_ids)
+    request = supabase_client.build_request(
+        "GET",
+        "/users",
+        params={"select": _USER_COLUMNS, "github_id": f"in.({joined_github_ids})"},
+    )
+    users = _parse_rows(await _send(supabase_client, request), _USER_ROWS)
+    return tuple(_profile_from_user(user, VerifiedGithubUsername(user.login)) for user in users)
 
 
 async def delete_renamed_user(supabase_client: SupabaseClient, profile: GithubProfile) -> None:
@@ -198,6 +219,53 @@ async def save_profile(
         },
     )
     await _send(supabase_client, user_request)
+
+
+async def save_total_tokens(supabase_client: SupabaseClient, profile: GithubProfile) -> None:
+    request = supabase_client.build_request(
+        "PATCH",
+        "/users",
+        params={"github_id": f"eq.{profile.github_id}"},
+        json={"total_tokens": profile.total_tokens},
+    )
+    await _send(supabase_client, request)
+
+
+class _DeletedPrivateRepository(BaseModel):
+    github_id: int
+
+
+_DELETED_PRIVATE_REPOSITORY_ROWS = TypeAdapter(list[_DeletedPrivateRepository])
+
+
+async def _delete_private_repositories(
+    supabase_client: SupabaseClient, filters: dict[str, str]
+) -> frozenset[GithubUserId]:
+    request = supabase_client.build_request(
+        "DELETE",
+        "/private_repositories",
+        headers={"Prefer": "return=representation"},
+        params={"select": "github_id"} | filters,
+    )
+    rows = _parse_rows(await _send(supabase_client, request), _DELETED_PRIVATE_REPOSITORY_ROWS)
+    return frozenset(GithubUserId(row.github_id) for row in rows)
+
+
+async def delete_account_private_repositories(
+    supabase_client: SupabaseClient, github_id: GithubUserId
+) -> None:
+    """Post: the account's private repository rows are gone."""
+    await _delete_private_repositories(supabase_client, {"github_id": f"eq.{github_id}"})
+
+
+async def delete_private_repositories(
+    supabase_client: SupabaseClient, repository_ids: tuple[RepositoryId, *tuple[RepositoryId, ...]]
+) -> frozenset[GithubUserId]:
+    """Post: those repositories' rows are gone; returns the accounts that held them."""
+    joined_repository_ids = ",".join(str(repository_id) for repository_id in repository_ids)
+    return await _delete_private_repositories(
+        supabase_client, {"repository_id": f"in.({joined_repository_ids})"}
+    )
 
 
 class _LeaderboardRow(BaseModel):

@@ -7,13 +7,18 @@ from functools import partial
 from typing import Annotated, Self
 
 import sentry_sdk
-from fastapi import BackgroundTasks, FastAPI, HTTPException, Path, Response, status
+from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Path, Request, Response, status
 from loguru import logger
 from pydantic import BaseModel, Field, HttpUrl, PositiveInt, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sentry_sdk.integrations.loguru import LoguruIntegration
 
-from gittoken.application import fetch_fresh_leaderboard, fetch_profile_avatar, lookup_profile
+from gittoken.application import (
+    fetch_fresh_leaderboard,
+    fetch_profile_avatar,
+    lookup_profile,
+    withdraw_consent,
+)
 from gittoken.badge import (
     Theme,
     render_badge,
@@ -21,7 +26,7 @@ from gittoken.badge import (
     render_profile_card,
     render_scanning_card,
 )
-from gittoken.db import create_supabase_client
+from gittoken.db import SupabaseClient, create_supabase_client
 from gittoken.domain import (
     GITHUB_LOGIN_PATTERN,
     MIN_TOKENS_BY_RARITY,
@@ -29,6 +34,7 @@ from gittoken.domain import (
     Agent,
     GithubProfile,
     GithubRequestError,
+    InvalidWebhookError,
     ProfileNotFoundError,
     ProfileStoreError,
     Rarity,
@@ -39,6 +45,7 @@ from gittoken.github import (
     create_github_api_client,
     create_github_avatar_client,
     load_github_app_private_key,
+    parse_webhook,
 )
 from gittoken.telemetry import configure_tracing
 
@@ -184,6 +191,48 @@ async def _badge_response(
     return _svg_response(render_scanning_card(login, theme), _SCANNING_CACHE_CONTROL)
 
 
+def _add_github_app_routes(
+    app: FastAPI, github_app: GithubApp | None, supabase_client: SupabaseClient
+) -> None:
+    @app.get("/v1/github-app")
+    def get_github_app() -> GithubAppResponse:
+        if github_app is not None:
+            return GithubAppResponse(
+                install_url=f"https://github.com/apps/{github_app.slug}/installations/new"
+            )
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "GitHub App is not configured",
+            headers={"Cache-Control": "no-store"},
+        )
+
+    @app.post("/v1/github-app/webhook", status_code=status.HTTP_204_NO_CONTENT)
+    async def receive_github_webhook(
+        request: Request,
+        x_github_event: Annotated[str, Header()],
+        x_hub_signature_256: Annotated[str, Header()],
+    ) -> None:
+        if github_app is not None:
+            try:
+                withdrawal = parse_webhook(
+                    github_app.webhook_secret,
+                    x_github_event,
+                    x_hub_signature_256,
+                    await request.body(),
+                )
+            except InvalidWebhookError as error:
+                raise HTTPException(status.HTTP_400_BAD_REQUEST, str(error)) from error
+            if withdrawal is not None:
+                try:
+                    await withdraw_consent(supabase_client, withdrawal)
+                except ProfileStoreError as error:
+                    raise HTTPException(
+                        status.HTTP_502_BAD_GATEWAY, "Private repositories could not be forgotten"
+                    ) from error
+            return
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "GitHub App is not configured")
+
+
 def create_app() -> FastAPI:
     settings = ApiSettings()
     logger.remove()
@@ -302,17 +351,7 @@ def create_app() -> FastAPI:
             for entry in entries
         ]
 
-    @app.get("/v1/github-app")
-    def get_github_app() -> GithubAppResponse:
-        if github_app is not None:
-            return GithubAppResponse(
-                install_url=f"https://github.com/apps/{github_app.slug}/installations/new"
-            )
-        raise HTTPException(
-            status.HTTP_503_SERVICE_UNAVAILABLE,
-            "GitHub App is not configured",
-            headers={"Cache-Control": "no-store"},
-        )
+    _add_github_app_routes(app, github_app, supabase_client)
 
     @app.get("/v1/agents")
     def get_agents() -> list[AgentResponse]:
