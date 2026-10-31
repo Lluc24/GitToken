@@ -12,17 +12,31 @@ import httpx
 import jwt
 from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey
 from cryptography.hazmat.primitives.serialization import load_pem_private_key
-from pydantic import BaseModel, Field, SecretStr, TypeAdapter, ValidationError, model_validator
+from pydantic import (
+    BaseModel,
+    Field,
+    SecretStr,
+    TypeAdapter,
+    ValidationError,
+    model_validator,
+)
 
 from gittoken.domain import (
+    GITHUB_LOGIN_PATTERN,
     AccountDisconnected,
     Agent,
     Avatar,
     ConsentWithdrawal,
+    GithubAuthorizationCode,
     GithubProfile,
     GithubRequestError,
     GithubUserId,
+    InstallationId,
+    InstallationNotFoundError,
+    InvalidAuthorizationCodeError,
     InvalidWebhookError,
+    OrganizationInstallationError,
+    PersonalInstallation,
     PrivateRepository,
     ProfileNotFoundError,
     RepositoriesRevoked,
@@ -33,6 +47,7 @@ from gittoken.domain import (
 
 _API_URL = "https://api.github.com"
 _AVATAR_URL = "https://avatars.githubusercontent.com"
+_OAUTH_URL = "https://github.com"
 # Twice the 276-pixel photo on the profile card, for high-density screens.
 _AVATAR_SIZE_PIXELS = 552
 _AVATAR_MEDIA_TYPES = frozenset({"image/png", "image/jpeg", "image/gif"})
@@ -50,6 +65,9 @@ _REPOSITORIES_PER_PAGE = 100
 
 GithubApiClient = NewType("GithubApiClient", httpx.AsyncClient)
 
+# A client for GitHub's OAuth host; a separate client so the API token never reaches it.
+GithubOauthClient = NewType("GithubOauthClient", httpx.AsyncClient)
+
 # A client for GitHub's avatar host; a separate client so the API token never reaches it.
 GithubAvatarClient = NewType("GithubAvatarClient", httpx.AsyncClient)
 
@@ -60,6 +78,8 @@ class GithubApp:
     private_key: RSAPrivateKey
     webhook_secret: SecretStr
     slug: str
+    client_id: str
+    client_secret: SecretStr
 
 
 def load_github_app_private_key(private_key_pem: SecretStr) -> RSAPrivateKey:
@@ -76,6 +96,14 @@ def create_github_api_client(token: SecretStr) -> GithubApiClient:
             base_url=_API_URL,
             headers={"Authorization": f"Bearer {token.get_secret_value()}"},
             timeout=httpx.Timeout(_TIMEOUT_SECONDS, pool=None),
+        )
+    )
+
+
+def create_github_oauth_client() -> GithubOauthClient:
+    return GithubOauthClient(
+        httpx.AsyncClient(
+            base_url=_OAUTH_URL, headers={"Accept": "application/json"}, timeout=_TIMEOUT_SECONDS
         )
     )
 
@@ -332,6 +360,8 @@ async def fetch_github_profile(
 
 class _Account(BaseModel):
     id: int
+    login: str = Field(pattern=GITHUB_LOGIN_PATTERN)
+    type: Literal["User", "Organization"]
 
 
 class _Installation(BaseModel):
@@ -367,12 +397,12 @@ _INSTALLATION_REPOSITORIES = TypeAdapter(_InstallationRepositories)
 
 
 async def _request_rest[Body](
-    github_client: GithubApiClient,
+    client: GithubApiClient | GithubOauthClient,
     request: httpx.Request,
     body_adapter: TypeAdapter[Body],
 ) -> Body:
     try:
-        response = await github_client.send(request)
+        response = await client.send(request)
         response.raise_for_status()
     except httpx.HTTPError as error:
         raise GithubRequestError(
@@ -397,27 +427,21 @@ def _app_authorization(github_app: GithubApp, now: datetime) -> dict[str, str]:
     return {**_REST_HEADERS, "Authorization": f"Bearer {app_token}"}
 
 
-async def _fetch_user_installation(
-    github_client: GithubApiClient, app_authorization: Mapping[str, str], login: str
+async def _fetch_installation(
+    github_client: GithubApiClient, app_authorization: Mapping[str, str], path: str
 ) -> _Installation | None:
-    """Post: the app's installation on the account, or None when the account has not installed it."""
-    request = github_client.build_request(
-        "GET", f"/users/{login}/installation", headers=app_authorization
-    )
+    """Post: the installation at path, or None when GitHub has no such installation."""
+    request = github_client.build_request("GET", path, headers=app_authorization)
     try:
         response = await github_client.send(request)
     except httpx.HTTPError as error:
-        raise GithubRequestError(
-            f"GitHub could not look up the installation of {login!r}"
-        ) from error
+        raise GithubRequestError(f"GitHub could not look up {path}") from error
     if response.status_code != httpx.codes.NOT_FOUND:
         try:
             response.raise_for_status()
             return _Installation.model_validate_json(response.content)
         except (httpx.HTTPError, ValidationError) as error:
-            raise GithubRequestError(
-                f"GitHub answered the installation of {login!r} unexpectedly"
-            ) from error
+            raise GithubRequestError(f"GitHub answered {path} unexpectedly") from error
     return None
 
 
@@ -440,6 +464,98 @@ async def _fetch_installation_repositories(
         page += 1
 
 
+async def fetch_personal_installation(
+    github_client: GithubApiClient,
+    github_app: GithubApp,
+    installation_id: InstallationId,
+    now: datetime,
+) -> PersonalInstallation:
+    """Post: the installation's personal account, InstallationNotFoundError when the app has no
+    such installation, or OrganizationInstallationError for an organization's installation."""
+    installation = await _fetch_installation(
+        github_client,
+        _app_authorization(github_app, now),
+        f"/app/installations/{installation_id}",
+    )
+    if installation is not None:
+        if installation.account.type == "Organization":
+            raise OrganizationInstallationError(
+                f"GitToken scans personal accounts only, and {installation.account.login} is an "
+                f"organization. Uninstall the GitHub App from {installation.account.login}'s "
+                "settings."
+            )
+        return PersonalInstallation(
+            GithubUserId(installation.account.id),
+            VerifiedGithubUsername(installation.account.login),
+        )
+    raise InstallationNotFoundError(f"the GitHub App has no installation {installation_id}")
+
+
+class _UserAccessToken(BaseModel):
+    access_token: SecretStr
+
+
+class _BadVerificationCode(BaseModel):
+    error: Literal["bad_verification_code"]
+
+
+class _AuthenticatedUser(BaseModel):
+    id: int
+
+
+_ACCESS_TOKEN_ANSWER = TypeAdapter(_UserAccessToken | _BadVerificationCode)
+_AUTHENTICATED_USER = TypeAdapter(_AuthenticatedUser)
+
+
+async def _revoke_user_token(
+    github_client: GithubApiClient, github_app: GithubApp, access_token: str
+) -> None:
+    try:
+        response = await github_client.request(
+            "DELETE",
+            f"/applications/{github_app.client_id}/token",
+            json={"access_token": access_token},
+            headers=_REST_HEADERS,
+            auth=httpx.BasicAuth(github_app.client_id, github_app.client_secret.get_secret_value()),
+        )
+        response.raise_for_status()
+    except httpx.HTTPError as error:
+        raise GithubRequestError("GitHub could not revoke the user's token") from error
+
+
+async def fetch_authorizing_user_id(
+    oauth_client: GithubOauthClient,
+    github_client: GithubApiClient,
+    github_app: GithubApp,
+    code: GithubAuthorizationCode,
+) -> GithubUserId:
+    """Post: the id of the GitHub user who authorized the app with code, or
+    InvalidAuthorizationCodeError for a used, expired or forged code. Any other OAuth answer
+    raises GithubRequestError. The user's token is revoked whether or not reading the user
+    worked."""
+    token_request = oauth_client.build_request(
+        "POST",
+        "/login/oauth/access_token",
+        data={
+            "client_id": github_app.client_id,
+            "client_secret": github_app.client_secret.get_secret_value(),
+            "code": code,
+        },
+    )
+    answer = await _request_rest(oauth_client, token_request, _ACCESS_TOKEN_ANSWER)
+    if isinstance(answer, _BadVerificationCode):
+        raise InvalidAuthorizationCodeError("The GitHub authorization code is used or expired")
+    access_token = answer.access_token.get_secret_value()
+    user_request = github_client.build_request(
+        "GET", "/user", headers={**_REST_HEADERS, "Authorization": f"Bearer {access_token}"}
+    )
+    try:
+        user = await _request_rest(github_client, user_request, _AUTHENTICATED_USER)
+    finally:
+        await _revoke_user_token(github_client, github_app, access_token)
+    return GithubUserId(user.id)
+
+
 async def _revoke_installation_token(
     github_client: GithubApiClient, installation_authorization: Mapping[str, str]
 ) -> None:
@@ -458,8 +574,8 @@ async def fetch_private_repositories(
     """Post: lines added by each agent since 2025 in every private non-fork repository the
     profile's account owns and granted to the app; empty when the account has not installed it
     or GitHub suspended the installation. The installation token is revoked before returning."""
-    installation = await _fetch_user_installation(
-        github_client, _app_authorization(github_app, now), profile.login
+    installation = await _fetch_installation(
+        github_client, _app_authorization(github_app, now), f"/users/{profile.login}/installation"
     )
     if installation is not None and installation.suspended_at is None:
         if installation.account.id != profile.github_id:
@@ -502,13 +618,8 @@ class _WebhookAction(BaseModel):
     action: str
 
 
-class _EventAccount(BaseModel):
-    id: int
-    type: Literal["User", "Organization"]
-
-
 class _InstalledAccount(BaseModel):
-    account: _EventAccount
+    account: _Account
 
 
 class _InstallationEvent(BaseModel):

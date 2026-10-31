@@ -1,5 +1,5 @@
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from time import perf_counter
 
 from loguru import logger
@@ -8,6 +8,7 @@ from gittoken.db import (
     SupabaseClient,
     delete_account_private_repositories,
     delete_private_repositories,
+    delete_profile_saved_before,
     delete_renamed_user,
     fetch_cached_profile,
     fetch_leaderboard,
@@ -21,6 +22,8 @@ from gittoken.domain import (
     ConsentWithdrawal,
     GithubProfile,
     GithubRequestError,
+    InstallationAuthorization,
+    InstallationId,
     LeaderboardEntry,
     ProfileNotFoundError,
     ProfileStoreError,
@@ -31,11 +34,18 @@ from gittoken.github import (
     GithubApiClient,
     GithubApp,
     GithubAvatarClient,
+    GithubOauthClient,
+    fetch_authorizing_user_id,
     fetch_avatar,
     fetch_github_profile,
+    fetch_personal_installation,
     fetch_private_repositories,
 )
 from gittoken.telemetry import tracer
+
+# A verified owner can authorize again at will, so a profile scanned this recently is kept to
+# spare the shared GitHub rate limit.
+_MINIMUM_RESCAN_INTERVAL = timedelta(minutes=1)
 
 
 async def lookup_profile(
@@ -142,3 +152,41 @@ async def withdraw_consent(supabase_client: SupabaseClient, withdrawal: ConsentW
         affected_account_count=len(affected_github_ids),
         duration_seconds=perf_counter() - started_at,
     ).info("Private repositories forgotten")
+
+
+async def find_installation_login(
+    github_client: GithubApiClient, github_app: GithubApp, installation_id: InstallationId
+) -> VerifiedGithubUsername:
+    """Post: the installation's personal login; nothing is changed."""
+    installation = await fetch_personal_installation(
+        github_client, github_app, installation_id, datetime.now(UTC)
+    )
+    return installation.login
+
+
+async def finish_authorized_installation(
+    github_client: GithubApiClient,
+    oauth_client: GithubOauthClient,
+    supabase_client: SupabaseClient,
+    github_app: GithubApp,
+    authorization: InstallationAuthorization,
+) -> VerifiedGithubUsername:
+    """Post: the installation's personal login. Its cached profile is dropped, so the next lookup
+    rescans it, only when the user who authorized the app is the installation's own account and
+    the profile is over a minute old."""
+    now = datetime.now(UTC)
+    installation = await fetch_personal_installation(
+        github_client, github_app, authorization.installation_id, now
+    )
+    authorizing_user_id = await fetch_authorizing_user_id(
+        oauth_client, github_client, github_app, authorization.code
+    )
+    if authorizing_user_id == installation.github_id:
+        await delete_profile_saved_before(
+            supabase_client, installation.github_id, now - _MINIMUM_RESCAN_INTERVAL
+        )
+    else:
+        logger.bind(event="installation_authorized_by_another_user").warning(
+            "Installation setup authorized by a user other than its account"
+        )
+    return installation.login

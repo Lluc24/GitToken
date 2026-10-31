@@ -101,6 +101,18 @@ class InvalidWebhookError(Exception):
     pass
 
 
+class InstallationNotFoundError(Exception):
+    pass
+
+
+class OrganizationInstallationError(Exception):
+    pass
+
+
+class InvalidAuthorizationCodeError(Exception):
+    pass
+
+
 GITHUB_LOGIN_PATTERN = "^[A-Za-z0-9][A-Za-z0-9-]{0,38}$"
 
 # A username that passed the format check at the boundary.
@@ -111,6 +123,26 @@ Avatar = NewType("Avatar", bytes)
 
 # GitHub's immutable numeric user id; logins can be renamed.
 GithubUserId = NewType("GithubUserId", int)
+
+
+# GitHub's id for one account's installation of the GitHub App.
+InstallationId = NewType("InstallationId", int)
+
+
+@dataclass(frozen=True)
+class PersonalInstallation:
+    github_id: GithubUserId
+    login: VerifiedGithubUsername
+
+
+# A one-time code GitHub hands the browser when a user authorizes the app during installation.
+GithubAuthorizationCode = NewType("GithubAuthorizationCode", str)
+
+
+@dataclass(frozen=True)
+class InstallationAuthorization:
+    installation_id: InstallationId
+    code: GithubAuthorizationCode
 
 
 # GitHub's immutable numeric repository id; names are never stored.
