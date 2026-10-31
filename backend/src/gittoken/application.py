@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import UTC, datetime
 from time import perf_counter
 
@@ -19,13 +20,25 @@ from gittoken.domain import (
     ProfileStoreError,
     VerifiedGithubUsername,
 )
-from gittoken.github import GithubApiClient, GithubAvatarClient, fetch_avatar, fetch_github_profile
+from gittoken.github import (
+    GithubApiClient,
+    GithubApp,
+    GithubAvatarClient,
+    fetch_avatar,
+    fetch_github_profile,
+    fetch_private_repositories,
+)
 from gittoken.telemetry import tracer
 
 
 async def lookup_profile(
-    github_client: GithubApiClient, supabase_client: SupabaseClient, login: VerifiedGithubUsername
+    github_client: GithubApiClient,
+    supabase_client: SupabaseClient,
+    github_app: GithubApp | None,
+    login: VerifiedGithubUsername,
 ) -> GithubProfile:
+    """Post: the cached profile, or a fresh scan that also covers the private repositories the
+    account granted when github_app is configured."""
     started_at = perf_counter()
     now = datetime.now(UTC)
     try:
@@ -39,6 +52,13 @@ async def lookup_profile(
                 "github.scan", record_exception=False, set_status_on_exception=False
             ):
                 profile = await fetch_github_profile(github_client, login)
+                if github_app is not None:
+                    profile = replace(
+                        profile,
+                        private_repositories=await fetch_private_repositories(
+                            github_client, github_app, profile, now
+                        ),
+                    )
             with tracer.start_as_current_span(
                 "profile.persist", record_exception=False, set_status_on_exception=False
             ):

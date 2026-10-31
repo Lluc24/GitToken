@@ -3,7 +3,6 @@ import logging
 import sys
 from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
 from functools import partial
 from typing import Annotated, Self
 
@@ -35,7 +34,12 @@ from gittoken.domain import (
     Rarity,
     VerifiedGithubUsername,
 )
-from gittoken.github import create_github_api_client, create_github_avatar_client
+from gittoken.github import (
+    GithubApp,
+    create_github_api_client,
+    create_github_avatar_client,
+    load_github_app_private_key,
+)
 from gittoken.telemetry import configure_tracing
 
 # Profiles are rescanned at most daily, so the CDN may keep these responses for a day.
@@ -45,14 +49,6 @@ _BADGE_LOOKUP_WAIT_SECONDS = 3
 _SCANNING_CACHE_CONTROL = "public, max-age=0, s-maxage=60"
 # Badge errors are drawn as a card with status 200, as a broken image explains nothing in a README.
 _BADGE_ERROR_CACHE_CONTROL = "public, max-age=0, s-maxage=600"
-
-
-@dataclass(frozen=True)
-class GithubApp:
-    id: int
-    private_key: SecretStr
-    webhook_secret: SecretStr
-    slug: str
 
 
 class ApiSettings(BaseSettings):
@@ -80,7 +76,7 @@ class ApiSettings(BaseSettings):
         ):
             return GithubApp(
                 self.github_app_id,
-                self.github_app_private_key,
+                load_github_app_private_key(self.github_app_private_key),
                 self.github_webhook_secret,
                 self.github_app_slug,
             )
@@ -111,6 +107,7 @@ class ProfileTokensResponse(BaseModel):
     total_tokens: int
     rarity: Rarity
     tokens_by_agent: dict[Agent, int]
+    includes_private_repositories: bool
 
 
 class LeaderboardEntryResponse(BaseModel):
@@ -208,6 +205,7 @@ def create_app() -> FastAPI:
             traces_sample_rate=0,
         )
     configure_tracing(settings.otel_exporter_otlp_endpoint)
+    github_app = settings.github_app
     github_client = create_github_api_client(settings.github_token)
     avatar_client = create_github_avatar_client()
     supabase_client = create_supabase_client(settings.supabase_url, settings.supabase_secret_key)
@@ -220,7 +218,7 @@ def create_app() -> FastAPI:
         await supabase_client.aclose()
 
     app = FastAPI(title="GitToken", lifespan=close_clients_on_shutdown)
-    lookup_profile_by_login = partial(lookup_profile, github_client, supabase_client)
+    lookup_profile_by_login = partial(lookup_profile, github_client, supabase_client, github_app)
 
     @app.get("/v1/users/{login}")
     async def get_user_tokens(
@@ -245,6 +243,7 @@ def create_app() -> FastAPI:
             total_tokens=profile.total_tokens,
             rarity=profile.rarity,
             tokens_by_agent=profile.tokens_by_agent,
+            includes_private_repositories=profile.includes_private_repositories,
         )
 
     @app.get("/v1/badges/{login}.svg")
@@ -302,8 +301,6 @@ def create_app() -> FastAPI:
             )
             for entry in entries
         ]
-
-    github_app = settings.github_app
 
     @app.get("/v1/github-app")
     def get_github_app() -> GithubAppResponse:
