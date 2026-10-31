@@ -1,6 +1,6 @@
 {
   "rewrites": [
     { "source": "/leaderboard", "destination": "/index.html" },
-    { "source": "/:login", "destination": "/index.html" }
+    { "source": "/:login([^./]+)", "destination": "/index.html" }
   ]
 }
