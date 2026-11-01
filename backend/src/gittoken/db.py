@@ -1,5 +1,5 @@
 from collections.abc import Mapping
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from types import MappingProxyType
 from typing import NewType
 
@@ -28,6 +28,9 @@ from gittoken.domain import (
 
 _TIMEOUT_SECONDS = 10
 _USER_TTL = timedelta(days=1)
+# A placeholder users row is stale from the start, so a save that fails before the real row is
+# written leaves no cached profile and no leaderboard entry.
+_PLACEHOLDER_FETCHED_AT = datetime(1970, 1, 1, tzinfo=UTC)
 
 SupabaseClient = NewType("SupabaseClient", httpx.AsyncClient)
 
@@ -173,8 +176,9 @@ async def save_profile(
         json={
             "github_id": profile.github_id,
             "login": profile.login.lower(),
-            "fetched_at": now.isoformat(),
+            "fetched_at": _PLACEHOLDER_FETCHED_AT.isoformat(),
             "total_tokens": 0,
+            "agents": [],
         },
     )
     await _send(supabase_client, placeholder_request)
