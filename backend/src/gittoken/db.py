@@ -125,7 +125,6 @@ async def fetch_cached_profile(
             "select": _USER_COLUMNS,
             "login": f"eq.{login.lower()}",
             "fetched_at": f"gte.{fresh_since.isoformat()}",
-            "agents": "not.is.null",
         },
     )
     users = _parse_rows(await _send(supabase_client, request), _USER_ROWS)
@@ -303,7 +302,6 @@ async def fetch_leaderboard(
         params={
             "select": "login,total_tokens",
             "fetched_at": f"gte.{fresh_since.isoformat()}",
-            "agents": "not.is.null",
             "order": "total_tokens.desc,login.asc",
             "limit": "50",
         },
