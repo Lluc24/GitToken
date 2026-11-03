@@ -1,5 +1,6 @@
+import json
 from collections.abc import Mapping
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from types import MappingProxyType
 from typing import NewType
 
@@ -28,9 +29,6 @@ from gittoken.domain import (
 
 _TIMEOUT_SECONDS = 10
 _USER_TTL = timedelta(days=1)
-# A placeholder users row is stale from the start, so a save that fails before the real row is
-# written leaves no cached profile and no leaderboard entry.
-_PLACEHOLDER_FETCHED_AT = datetime(1970, 1, 1, tzinfo=UTC)
 
 SupabaseClient = NewType("SupabaseClient", httpx.AsyncClient)
 
@@ -81,7 +79,7 @@ def _agent_rows(lines_added_by_agent: Mapping[Agent, int]) -> list[dict[str, str
     ]
 
 
-class _PrivateRepository(BaseModel):
+class _GrantedRepository(BaseModel):
     repository_id: int = Field(gt=0)
     agents: list[_UserAgent]
 
@@ -90,11 +88,11 @@ class _User(BaseModel):
     github_id: int
     login: str = Field(pattern=GITHUB_LOGIN_PATTERN)
     agents: list[_UserAgent]
-    private_repositories: list[_PrivateRepository]
+    granted_repositories: list[_GrantedRepository]
 
 
 _USER_ROWS = TypeAdapter(list[_User])
-_USER_COLUMNS = "github_id,login,agents,private_repositories(repository_id,agents)"
+_USER_COLUMNS = "github_id,login,agents,granted_repositories"
 
 
 def _profile_from_user(user: _User, login: VerifiedGithubUsername) -> GithubProfile:
@@ -107,7 +105,7 @@ def _profile_from_user(user: _User, login: VerifiedGithubUsername) -> GithubProf
                 RepositoryId(private_repository.repository_id),
                 _lines_added_by_agent(private_repository.agents),
             )
-            for private_repository in user.private_repositories
+            for private_repository in user.granted_repositories
         ),
     )
 
@@ -161,54 +159,23 @@ async def delete_renamed_user(supabase_client: SupabaseClient, profile: GithubPr
     await _send(supabase_client, request)
 
 
+def _granted_repository_rows(
+    profile: GithubProfile,
+) -> list[dict[str, int | list[dict[str, str | int]]]]:
+    return [
+        {
+            "repository_id": private_repository.repository_id,
+            "agents": _agent_rows(private_repository.lines_added_by_agent),
+        }
+        for private_repository in profile.private_repositories
+    ]
+
+
 async def save_profile(
     supabase_client: SupabaseClient, profile: GithubProfile, now: datetime
 ) -> None:
-    """Post: the users row holds the public agents and the total with private repositories, and
-    the account's private repository rows are exactly the profile's. The users row is written
-    last, so a failed save leaves the cache stale and the next lookup rescans."""
-    placeholder_request = supabase_client.build_request(
-        "POST",
-        "/users",
-        headers={"Prefer": "resolution=ignore-duplicates"},
-        params={"on_conflict": "github_id"},
-        json={
-            "github_id": profile.github_id,
-            "login": profile.login.lower(),
-            "fetched_at": _PLACEHOLDER_FETCHED_AT.isoformat(),
-            "total_tokens": 0,
-            "agents": [],
-        },
-    )
-    await _send(supabase_client, placeholder_request)
-    repository_ids = ",".join(
-        str(private_repository.repository_id) for private_repository in profile.private_repositories
-    )
-    delete_request = supabase_client.build_request(
-        "DELETE",
-        "/private_repositories",
-        params={"github_id": f"eq.{profile.github_id}"}
-        | ({"repository_id": f"not.in.({repository_ids})"} if repository_ids else {}),
-    )
-    await _send(supabase_client, delete_request)
-    if profile.private_repositories:
-        upsert_request = supabase_client.build_request(
-            "POST",
-            "/private_repositories",
-            headers={"Prefer": "resolution=merge-duplicates"},
-            params={"on_conflict": "github_id,repository_id"},
-            json=[
-                {
-                    "github_id": profile.github_id,
-                    "repository_id": private_repository.repository_id,
-                    "agents": _agent_rows(private_repository.lines_added_by_agent),
-                    "scanned_at": now.isoformat(),
-                }
-                for private_repository in profile.private_repositories
-            ],
-        )
-        await _send(supabase_client, upsert_request)
-    user_request = supabase_client.build_request(
+    """Post: the account's users row holds the profile, saved at now, in one atomic upsert."""
+    request = supabase_client.build_request(
         "POST",
         "/users",
         headers={"Prefer": "resolution=merge-duplicates"},
@@ -219,17 +186,25 @@ async def save_profile(
             "fetched_at": now.isoformat(),
             "total_tokens": profile.total_tokens,
             "agents": _agent_rows(profile.public_lines_added_by_agent),
+            "granted_repositories": _granted_repository_rows(profile),
         },
     )
-    await _send(supabase_client, user_request)
+    await _send(supabase_client, request)
 
 
-async def save_total_tokens(supabase_client: SupabaseClient, profile: GithubProfile) -> None:
+async def save_granted_repositories(
+    supabase_client: SupabaseClient, profile: GithubProfile
+) -> None:
+    """Post: the account's users row holds the profile's private repositories and total, keeping
+    its saved time."""
     request = supabase_client.build_request(
         "PATCH",
         "/users",
         params={"github_id": f"eq.{profile.github_id}"},
-        json={"total_tokens": profile.total_tokens},
+        json={
+            "total_tokens": profile.total_tokens,
+            "granted_repositories": _granted_repository_rows(profile),
+        },
     )
     await _send(supabase_client, request)
 
@@ -237,8 +212,8 @@ async def save_total_tokens(supabase_client: SupabaseClient, profile: GithubProf
 async def delete_profile_saved_before(
     supabase_client: SupabaseClient, github_id: GithubUserId, saved_before: datetime
 ) -> None:
-    """Post: if the account's profile was saved before saved_before, it and, by cascade, its
-    private repositories are gone, so the next lookup rescans it."""
+    """Post: if the account's profile was saved before saved_before, it is gone, so the next
+    lookup rescans it."""
     request = supabase_client.build_request(
         "DELETE",
         "/users",
@@ -247,41 +222,26 @@ async def delete_profile_saved_before(
     await _send(supabase_client, request)
 
 
-class _DeletedPrivateRepository(BaseModel):
-    github_id: int
-
-
-_DELETED_PRIVATE_REPOSITORY_ROWS = TypeAdapter(list[_DeletedPrivateRepository])
-
-
-async def _delete_private_repositories(
-    supabase_client: SupabaseClient, filters: dict[str, str]
-) -> frozenset[GithubUserId]:
-    request = supabase_client.build_request(
-        "DELETE",
-        "/private_repositories",
-        headers={"Prefer": "return=representation"},
-        params={"select": "github_id"} | filters,
-    )
-    rows = _parse_rows(await _send(supabase_client, request), _DELETED_PRIVATE_REPOSITORY_ROWS)
-    return frozenset(GithubUserId(row.github_id) for row in rows)
-
-
-async def delete_account_private_repositories(
-    supabase_client: SupabaseClient, github_id: GithubUserId
-) -> None:
-    """Post: the account's private repository rows are gone."""
-    await _delete_private_repositories(supabase_client, {"github_id": f"eq.{github_id}"})
-
-
-async def delete_private_repositories(
+async def fetch_profiles_granting(
     supabase_client: SupabaseClient, repository_ids: tuple[RepositoryId, *tuple[RepositoryId, ...]]
-) -> frozenset[GithubUserId]:
-    """Post: those repositories' rows are gone; returns the accounts that held them."""
-    joined_repository_ids = ",".join(str(repository_id) for repository_id in repository_ids)
-    return await _delete_private_repositories(
-        supabase_client, {"repository_id": f"in.({joined_repository_ids})"}
-    )
+) -> tuple[GithubProfile, ...]:
+    """Post: the saved profile, whatever its age, of each account that granted any of
+    repository_ids, once per account, with the login as stored."""
+    profile_by_github_id: dict[GithubUserId, GithubProfile] = {}
+    for repository_id in repository_ids:
+        request = supabase_client.build_request(
+            "GET",
+            "/users",
+            params={
+                "select": _USER_COLUMNS,
+                "granted_repositories": f"cs.{json.dumps([{'repository_id': repository_id}])}",
+            },
+        )
+        for user in _parse_rows(await _send(supabase_client, request), _USER_ROWS):
+            profile_by_github_id[GithubUserId(user.github_id)] = _profile_from_user(
+                user, VerifiedGithubUsername(user.login)
+            )
+    return tuple(profile_by_github_id.values())
 
 
 class _LeaderboardRow(BaseModel):

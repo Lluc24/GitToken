@@ -1,6 +1,6 @@
 from collections import Counter
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import StrEnum
 from types import MappingProxyType
 from typing import NewType
@@ -205,6 +205,22 @@ class GithubProfile:
     @property
     def rarity(self) -> Rarity:
         return rarity_for(self.total_tokens)
+
+
+def without_withdrawn_repositories(
+    profile: GithubProfile, withdrawal: ConsentWithdrawal
+) -> GithubProfile:
+    """Post: the profile without the private repositories the withdrawal covers."""
+    match withdrawal:
+        case AccountDisconnected():
+            kept_repositories: tuple[PrivateRepository, ...] = ()
+        case RepositoriesRevoked(repository_ids):
+            kept_repositories = tuple(
+                private_repository
+                for private_repository in profile.private_repositories
+                if private_repository.repository_id not in repository_ids
+            )
+    return replace(profile, private_repositories=kept_repositories)
 
 
 @dataclass(frozen=True)
