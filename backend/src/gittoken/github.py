@@ -259,14 +259,14 @@ async def _query(
 
 
 async def _count_repository_lines_added_by_agent(
-    github_client: GithubApiClient, repository_id: str, headers: Mapping[str, str]
+    github_client: GithubApiClient, repository_node_id: str, headers: Mapping[str, str]
 ) -> Counter[Agent]:
     lines_added_by_agent: Counter[Agent] = Counter()
     cursor: str | None = None
     seen_cursors: set[str] = set()
     while True:
         variables = {
-            "repositoryId": repository_id,
+            "repositoryId": repository_node_id,
             "since": _COMMITS_SINCE.isoformat(),
             "cursor": cursor,
         }
@@ -292,10 +292,17 @@ async def _count_repository_lines_added_by_agent(
         cursor = next_cursor
 
 
-async def _fetch_repositories(
+@dataclass(frozen=True)
+class _PublicRepositories:
+    github_id: GithubUserId
+    repository_node_ids: tuple[str, ...]
+
+
+async def _fetch_public_repositories(
     github_client: GithubApiClient, login: VerifiedGithubUsername
-) -> _User:
-    repositories: list[_Repository] = []
+) -> _PublicRepositories:
+    """Post: the account and its public non-fork repositories pushed since 2025."""
+    repository_node_ids: list[str] = []
     cursor: str | None = None
     seen_cursors: set[str] = set()
     while True:
@@ -310,8 +317,8 @@ async def _fetch_repositories(
         if data.user is None:
             raise ProfileNotFoundError(f"no GitHub user named {login!r}")
         page = data.user.repositories
-        repositories.extend(
-            repository
+        repository_node_ids.extend(
+            repository.id
             for repository in page.nodes
             if _is_pushed_since_commits_start(repository.pushed_at)
         )
@@ -321,9 +328,8 @@ async def _fetch_repositories(
             and not _is_pushed_since_commits_start(repository.pushed_at)
             for repository in page.nodes
         ):
-            return _User(
-                databaseId=data.user.database_id,
-                repositories=_Repositories(pageInfo=page.page_info, nodes=repositories),
+            return _PublicRepositories(
+                GithubUserId(data.user.database_id), tuple(repository_node_ids)
             )
         if next_cursor in seen_cursors:
             raise GithubRequestError("GitHub repeated a repository pagination cursor")
@@ -332,21 +338,21 @@ async def _fetch_repositories(
 
 
 async def _count_repositories_lines_added_by_agent(
-    github_client: GithubApiClient, repository_ids: list[str], headers: Mapping[str, str]
+    github_client: GithubApiClient, repository_node_ids: tuple[str, ...], headers: Mapping[str, str]
 ) -> list[Counter[Agent]]:
-    """Post: one count per repository, in the order of repository_ids."""
-    pending_repositories = iter(enumerate(repository_ids))
-    counts: list[Counter[Agent]] = [Counter() for _ in repository_ids]
+    """Post: one count per repository, in the order of repository_node_ids."""
+    pending_repositories = iter(enumerate(repository_node_ids))
+    counts: list[Counter[Agent]] = [Counter() for _ in repository_node_ids]
 
     async def count_next_repositories() -> None:
-        for index, repository_id in pending_repositories:
+        for index, repository_node_id in pending_repositories:
             counts[index] = await _count_repository_lines_added_by_agent(
-                github_client, repository_id, headers
+                github_client, repository_node_id, headers
             )
 
     workers = [
         asyncio.create_task(count_next_repositories())
-        for _ in range(min(_MAXIMUM_CONCURRENT_REPOSITORIES, len(repository_ids)))
+        for _ in range(min(_MAXIMUM_CONCURRENT_REPOSITORIES, len(repository_node_ids)))
     ]
     try:
         await asyncio.gather(*workers)
@@ -363,12 +369,12 @@ async def fetch_github_profile(
     """Post: lines added by each agent in commits since 2025 across public non-fork repositories,
     with no private repositories, or ProfileNotFoundError. Failed or incomplete GitHub responses
     raise GithubRequestError."""
-    user = await _fetch_repositories(github_client, login)
+    public_repositories = await _fetch_public_repositories(github_client, login)
     counts = await _count_repositories_lines_added_by_agent(
-        github_client, [repository.id for repository in user.repositories.nodes], {}
+        github_client, public_repositories.repository_node_ids, {}
     )
     return GithubProfile(
-        GithubUserId(user.database_id), login, MappingProxyType(dict(sum(counts, Counter()))), ()
+        public_repositories.github_id, login, MappingProxyType(dict(sum(counts, Counter()))), ()
     )
 
 
@@ -616,7 +622,7 @@ async def fetch_private_repositories(
         ]
         counts = await _count_repositories_lines_added_by_agent(
             github_client,
-            [repository.node_id for repository in repositories],
+            tuple(repository.node_id for repository in repositories),
             installation_authorization,
         )
         await _revoke_installation_token(github_client, installation_authorization)
