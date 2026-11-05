@@ -3,7 +3,7 @@ import hmac
 from collections import Counter
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from types import MappingProxyType
 from typing import Literal, NewType, Self
@@ -13,6 +13,7 @@ import jwt
 from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey
 from cryptography.hazmat.primitives.serialization import load_pem_private_key
 from pydantic import (
+    AwareDatetime,
     BaseModel,
     Field,
     SecretStr,
@@ -53,8 +54,7 @@ _AVATAR_SIZE_PIXELS = 552
 _AVATAR_MEDIA_TYPES = frozenset({"image/png", "image/jpeg", "image/gif"})
 _TIMEOUT_SECONDS = 30
 _MAXIMUM_CONCURRENT_REPOSITORIES = 8
-# GitHub timestamps are UTC ISO 8601, so they compare correctly as strings.
-_COMMITS_SINCE = "2025-01-01T00:00:00Z"
+_COMMITS_SINCE = datetime(2025, 1, 1, tzinfo=UTC)
 # GitHub rejects app tokens that expire more than 10 minutes ahead; a minute back absorbs clock drift.
 _APP_TOKEN_ISSUED_EARLIER = timedelta(minutes=1)
 _APP_TOKEN_LIFETIME = timedelta(minutes=9)
@@ -149,7 +149,7 @@ query($repositoryId: ID!, $since: GitTimestamp!, $cursor: String) {
 
 class _Repository(BaseModel):
     id: str
-    pushed_at: str | None = Field(alias="pushedAt")
+    pushed_at: AwareDatetime | None = Field(alias="pushedAt")
 
 
 class _PageInfo(BaseModel):
@@ -227,6 +227,10 @@ class _CommitsData(BaseModel):
     node: _RepositoryCommits
 
 
+def _is_pushed_since_commits_start(pushed_at: datetime | None) -> bool:
+    return pushed_at is not None and pushed_at >= _COMMITS_SINCE
+
+
 async def _query(
     github_client: GithubApiClient,
     query: str,
@@ -256,7 +260,11 @@ async def _count_repository_lines_added_by_agent(
     cursor: str | None = None
     seen_cursors: set[str] = set()
     while True:
-        variables = {"repositoryId": repository_id, "since": _COMMITS_SINCE, "cursor": cursor}
+        variables = {
+            "repositoryId": repository_id,
+            "since": _COMMITS_SINCE.isoformat(),
+            "cursor": cursor,
+        }
         try:
             data = _CommitsData.model_validate(
                 await _query(github_client, _COMMITS_QUERY, variables, headers)
@@ -300,10 +308,11 @@ async def _fetch_repositories(
         repositories.extend(
             repository
             for repository in page.nodes
-            if repository.pushed_at is not None and repository.pushed_at >= _COMMITS_SINCE
+            if _is_pushed_since_commits_start(repository.pushed_at)
         )
         if not page.page_info.has_next_page or any(
-            repository.pushed_at is not None and repository.pushed_at < _COMMITS_SINCE
+            repository.pushed_at is not None
+            and not _is_pushed_since_commits_start(repository.pushed_at)
             for repository in page.nodes
         ):
             return _User(
@@ -383,7 +392,7 @@ class _InstallationRepository(BaseModel):
     node_id: str
     private: bool
     fork: bool
-    pushed_at: str | None
+    pushed_at: AwareDatetime | None
     owner: _Owner
 
 
@@ -598,8 +607,7 @@ async def fetch_private_repositories(
             if repository.private
             and not repository.fork
             and repository.owner.id == profile.github_id
-            and repository.pushed_at is not None
-            and repository.pushed_at >= _COMMITS_SINCE
+            and _is_pushed_since_commits_start(repository.pushed_at)
         ]
         counts = await _count_repositories_lines_added_by_agent(
             github_client,
