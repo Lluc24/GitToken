@@ -148,7 +148,7 @@ query($repositoryId: ID!, $since: GitTimestamp!, $cursor: String) {
 
 
 class _Repository(BaseModel):
-    id: str
+    node_id: str = Field(alias="id")
     pushed_at: AwareDatetime | None = Field(alias="pushedAt")
 
 
@@ -318,14 +318,14 @@ async def _fetch_public_repositories(
             raise ProfileNotFoundError(f"no GitHub user named {login!r}")
         page = data.user.repositories
         repository_node_ids.extend(
-            repository.id
+            repository.node_id
             for repository in page.nodes
             if _is_pushed_since_commits_start(repository.pushed_at)
         )
         next_cursor = page.page_info.next_cursor
+        # The query lists the most recently pushed first, so one older repository ends the listing.
         if next_cursor is None or any(
-            repository.pushed_at is not None
-            and not _is_pushed_since_commits_start(repository.pushed_at)
+            repository.pushed_at is not None and repository.pushed_at < _COMMITS_SINCE
             for repository in page.nodes
         ):
             return _PublicRepositories(
