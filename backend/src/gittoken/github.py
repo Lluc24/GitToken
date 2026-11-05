@@ -477,7 +477,7 @@ async def _fetch_installation_repositories(
             params={"per_page": _REPOSITORIES_PER_PAGE, "page": page},
             headers=installation_authorization,
         )
-        body = await _request_rest(github_client, request, TypeAdapter(_InstallationRepositories))
+        body = await _request_rest(github_client, request, _INSTALLATION_REPOSITORIES)
         repositories.extend(body.repositories)
         if len(repositories) >= body.total_count or not body.repositories:
             return repositories
