@@ -162,6 +162,11 @@ class _PageInfo(BaseModel):
             raise ValueError("a next page requires a non-empty cursor")
         return self
 
+    @property
+    def next_cursor(self) -> str | None:
+        """Post: the non-empty cursor of the next page, or None on the last page."""
+        return self.end_cursor if self.has_next_page else None
+
 
 class _Repositories(BaseModel):
     page_info: _PageInfo = Field(alias="pageInfo")
@@ -278,11 +283,11 @@ async def _count_repository_lines_added_by_agent(
             agent = find_agent(author.email for author in commit.authors.nodes)
             if agent is not None:
                 lines_added_by_agent[agent] += commit.additions
-        if not history.page_info.has_next_page:
+        next_cursor = history.page_info.next_cursor
+        if next_cursor is None:
             return lines_added_by_agent
-        next_cursor = history.page_info.end_cursor
-        if next_cursor is None or next_cursor in seen_cursors:
-            raise GithubRequestError("GitHub returned an invalid commit pagination cursor")
+        if next_cursor in seen_cursors:
+            raise GithubRequestError("GitHub repeated a commit pagination cursor")
         seen_cursors.add(next_cursor)
         cursor = next_cursor
 
@@ -310,7 +315,8 @@ async def _fetch_repositories(
             for repository in page.nodes
             if _is_pushed_since_commits_start(repository.pushed_at)
         )
-        if not page.page_info.has_next_page or any(
+        next_cursor = page.page_info.next_cursor
+        if next_cursor is None or any(
             repository.pushed_at is not None
             and not _is_pushed_since_commits_start(repository.pushed_at)
             for repository in page.nodes
@@ -319,9 +325,8 @@ async def _fetch_repositories(
                 databaseId=data.user.database_id,
                 repositories=_Repositories(pageInfo=page.page_info, nodes=repositories),
             )
-        next_cursor = page.page_info.end_cursor
-        if next_cursor is None or next_cursor in seen_cursors:
-            raise GithubRequestError("GitHub returned an invalid repository pagination cursor")
+        if next_cursor in seen_cursors:
+            raise GithubRequestError("GitHub repeated a repository pagination cursor")
         seen_cursors.add(next_cursor)
         cursor = next_cursor
 
