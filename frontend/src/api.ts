@@ -6,6 +6,25 @@ const rarity = z.enum(["common", "rare", "epic", "legendary", "champion"]);
 
 export type Rarity = z.infer<typeof rarity>;
 
+/** Post: the JSON body parsed by schema, or an Error naming source when it is unreadable or unexpected. */
+async function parseBody<T>(
+  response: Response,
+  schema: z.ZodType<T>,
+  source: string,
+): Promise<T> {
+  let rawBody: unknown;
+  try {
+    rawBody = await response.json();
+  } catch {
+    throw new Error(`${source} returned an unreadable response`);
+  }
+  const parsed = schema.safeParse(rawBody);
+  if (!parsed.success) {
+    throw new Error(`${source} returned an unexpected response`);
+  }
+  return parsed.data;
+}
+
 const profileTokensResponse = z.object({
   login: z.string(),
   total_tokens: z.number(),
@@ -38,17 +57,11 @@ async function fetchProfileTokens(
   if (!response.ok) {
     throw new Error(`The GitToken API answered ${response.status}`);
   }
-  let rawBody: unknown;
-  try {
-    rawBody = await response.json();
-  } catch {
-    throw new Error("The GitToken API returned an unreadable response");
-  }
-  const parsed = profileTokensResponse.safeParse(rawBody);
-  if (!parsed.success) {
-    throw new Error("The GitToken API returned an unexpected response");
-  }
-  const body = parsed.data;
+  const body = await parseBody(
+    response,
+    profileTokensResponse,
+    "The GitToken API",
+  );
   return {
     login: body.login,
     totalTokens: body.total_tokens,
@@ -85,17 +98,12 @@ async function fetchLeaderboard(): Promise<LeaderboardEntry[]> {
   const response = await fetch("/v1/leaderboard");
   if (!response.ok)
     throw new Error("The leaderboard is unavailable right now.");
-  let rawBody: unknown;
-  try {
-    rawBody = await response.json();
-  } catch {
-    throw new Error("The leaderboard returned an unreadable response");
-  }
-  const parsed = leaderboardResponse.safeParse(rawBody);
-  if (!parsed.success) {
-    throw new Error("The leaderboard returned an unexpected response");
-  }
-  return parsed.data.map((entry) => ({
+  const body = await parseBody(
+    response,
+    leaderboardResponse,
+    "The leaderboard",
+  );
+  return body.map((entry) => ({
     login: entry.login,
     totalTokens: entry.total_tokens,
     rarity: entry.rarity,
@@ -126,17 +134,8 @@ async function fetchGithubApp(): Promise<GithubApp> {
   if (!response.ok) {
     throw new Error(`The GitToken API answered ${response.status}`);
   }
-  let rawBody: unknown;
-  try {
-    rawBody = await response.json();
-  } catch {
-    throw new Error("The GitToken API returned an unreadable response");
-  }
-  const parsed = githubAppResponse.safeParse(rawBody);
-  if (!parsed.success) {
-    throw new Error("The GitToken API returned an unexpected response");
-  }
-  return { isConfigured: true, installUrl: parsed.data.install_url };
+  const body = await parseBody(response, githubAppResponse, "The GitToken API");
+  return { isConfigured: true, installUrl: body.install_url };
 }
 
 export function useGithubApp() {
