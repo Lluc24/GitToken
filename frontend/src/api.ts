@@ -6,14 +6,12 @@ const rarity = z.enum(["common", "rare", "epic", "legendary", "champion"]);
 
 export type Rarity = z.infer<typeof rarity>;
 
-// includes_private_repositories is optional because the CDN may serve a profile cached before
-// private repository scans for up to s-maxage + stale-while-revalidate = 25 hours after the deploy.
 const profileTokensResponse = z.object({
   login: z.string(),
   total_tokens: z.number(),
   rarity,
   tokens_by_agent: z.record(z.string(), z.number()),
-  includes_private_repositories: z.boolean().optional(),
+  includes_private_repositories: z.boolean(),
 });
 
 export type ProfileTokens = {
@@ -56,7 +54,7 @@ async function fetchProfileTokens(
     totalTokens: body.total_tokens,
     rarity: body.rarity,
     tokensByAgent: body.tokens_by_agent,
-    includesPrivateRepositories: body.includes_private_repositories ?? false,
+    includesPrivateRepositories: body.includes_private_repositories,
   };
 }
 
@@ -69,20 +67,18 @@ export function useProfileTokens(login: string, connectedKey: string) {
   });
 }
 
-// rarity is optional because the CDN may serve a response cached before #85 for up to
-// s-maxage + stale-while-revalidate = 360 seconds after the deploy.
 const leaderboardResponse = z.array(
   z.object({
     login: z.string(),
     total_tokens: z.number(),
-    rarity: rarity.optional(),
+    rarity,
   }),
 );
 
 export type LeaderboardEntry = {
   login: string;
   totalTokens: number;
-  rarity: Rarity | null;
+  rarity: Rarity;
 };
 
 async function fetchLeaderboard(): Promise<LeaderboardEntry[]> {
@@ -102,7 +98,7 @@ async function fetchLeaderboard(): Promise<LeaderboardEntry[]> {
   return parsed.data.map((entry) => ({
     login: entry.login,
     totalTokens: entry.total_tokens,
-    rarity: entry.rarity ?? null,
+    rarity: entry.rarity,
   }));
 }
 

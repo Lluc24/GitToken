@@ -60,13 +60,11 @@ export function Leaderboard() {
                 >
                   {profile.login}
                 </Link>
-                {profile.rarity !== null && (
-                  <span
-                    className={`block font-medium text-xs ${rarityClassNames[profile.rarity]}`}
-                  >
-                    {profile.rarity}
-                  </span>
-                )}
+                <span
+                  className={`block font-medium text-xs ${rarityClassNames[profile.rarity]}`}
+                >
+                  {profile.rarity}
+                </span>
               </div>
               <span className="shrink-0 font-mono text-sm tabular-nums sm:min-w-16 sm:text-right">
                 {formatTokens(profile.totalTokens)}
