@@ -6,15 +6,14 @@ from loguru import logger
 
 from gittoken.db import (
     SupabaseClient,
-    delete_account_private_repositories,
-    delete_private_repositories,
     delete_profile_saved_before,
     delete_renamed_user,
     fetch_cached_profile,
     fetch_leaderboard,
+    fetch_profiles_granting,
     fetch_stored_profiles,
+    save_granted_repositories,
     save_profile,
-    save_total_tokens,
 )
 from gittoken.domain import (
     AccountDisconnected,
@@ -29,6 +28,7 @@ from gittoken.domain import (
     ProfileStoreError,
     RepositoriesRevoked,
     VerifiedGithubUsername,
+    without_withdrawn_repositories,
 )
 from gittoken.github import (
     GithubApiClient,
@@ -122,22 +122,23 @@ async def fetch_profile_avatar(
 
 
 async def withdraw_consent(supabase_client: SupabaseClient, withdrawal: ConsentWithdrawal) -> None:
-    """Post: the withdrawn private repositories are forgotten and every affected account's
-    leaderboard total is recomputed from what remains. If the recompute fails after the delete, a
-    redelivered disconnect repairs the total; a repository revocation waits for the next scan."""
+    """Post: every affected account's saved profile no longer holds the withdrawn private
+    repositories, and its leaderboard total is recomputed from what remains, one update per account.
+    A save landing between the read and the update is overwritten without the withdrawn
+    repositories, so it can only under-report until the next scan."""
     started_at = perf_counter()
     try:
         match withdrawal:
             case AccountDisconnected(github_id):
-                await delete_account_private_repositories(supabase_client, github_id)
-                affected_github_ids = frozenset({github_id})
-            case RepositoriesRevoked(repository_ids):
-                affected_github_ids = await delete_private_repositories(
-                    supabase_client, repository_ids
+                affected_profiles = await fetch_stored_profiles(
+                    supabase_client, frozenset({github_id})
                 )
-        if affected_github_ids:
-            for profile in await fetch_stored_profiles(supabase_client, affected_github_ids):
-                await save_total_tokens(supabase_client, profile)
+            case RepositoriesRevoked(repository_ids):
+                affected_profiles = await fetch_profiles_granting(supabase_client, repository_ids)
+        for profile in affected_profiles:
+            await save_granted_repositories(
+                supabase_client, without_withdrawn_repositories(profile, withdrawal)
+            )
     except ProfileStoreError as error:
         logger.bind(
             event="consent_withdrawal_error",
@@ -149,7 +150,7 @@ async def withdraw_consent(supabase_client: SupabaseClient, withdrawal: ConsentW
     logger.bind(
         event="consent_withdrawn",
         withdrawal_type=type(withdrawal).__name__,
-        affected_account_count=len(affected_github_ids),
+        affected_account_count=len(affected_profiles),
         duration_seconds=perf_counter() - started_at,
     ).info("Private repositories forgotten")
 
