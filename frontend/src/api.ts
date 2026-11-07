@@ -6,14 +6,31 @@ const rarity = z.enum(["common", "rare", "epic", "legendary", "champion"]);
 
 export type Rarity = z.infer<typeof rarity>;
 
-// includes_private_repositories is optional because the CDN may serve a profile cached before
-// private repository scans for up to s-maxage + stale-while-revalidate = 25 hours after the deploy.
+/** Post: the JSON body parsed by schema, or an Error naming source when it is unreadable or unexpected. */
+async function parseBody<T>(
+  response: Response,
+  schema: z.ZodType<T>,
+  source: string,
+): Promise<T> {
+  let rawBody: unknown;
+  try {
+    rawBody = await response.json();
+  } catch {
+    throw new Error(`${source} returned an unreadable response`);
+  }
+  const parsed = schema.safeParse(rawBody);
+  if (!parsed.success) {
+    throw new Error(`${source} returned an unexpected response`);
+  }
+  return parsed.data;
+}
+
 const profileTokensResponse = z.object({
   login: z.string(),
   total_tokens: z.number(),
   rarity,
   tokens_by_agent: z.record(z.string(), z.number()),
-  includes_private_repositories: z.boolean().optional(),
+  includes_private_repositories: z.boolean(),
 });
 
 export type ProfileTokens = {
@@ -40,23 +57,17 @@ async function fetchProfileTokens(
   if (!response.ok) {
     throw new Error(`The GitToken API answered ${response.status}`);
   }
-  let rawBody: unknown;
-  try {
-    rawBody = await response.json();
-  } catch {
-    throw new Error("The GitToken API returned an unreadable response");
-  }
-  const parsed = profileTokensResponse.safeParse(rawBody);
-  if (!parsed.success) {
-    throw new Error("The GitToken API returned an unexpected response");
-  }
-  const body = parsed.data;
+  const body = await parseBody(
+    response,
+    profileTokensResponse,
+    "The GitToken API",
+  );
   return {
     login: body.login,
     totalTokens: body.total_tokens,
     rarity: body.rarity,
     tokensByAgent: body.tokens_by_agent,
-    includesPrivateRepositories: body.includes_private_repositories ?? false,
+    includesPrivateRepositories: body.includes_private_repositories,
   };
 }
 
@@ -69,40 +80,33 @@ export function useProfileTokens(login: string, connectedKey: string) {
   });
 }
 
-// rarity is optional because the CDN may serve a response cached before #85 for up to
-// s-maxage + stale-while-revalidate = 360 seconds after the deploy.
 const leaderboardResponse = z.array(
   z.object({
     login: z.string(),
     total_tokens: z.number(),
-    rarity: rarity.optional(),
+    rarity,
   }),
 );
 
 export type LeaderboardEntry = {
   login: string;
   totalTokens: number;
-  rarity: Rarity | null;
+  rarity: Rarity;
 };
 
 async function fetchLeaderboard(): Promise<LeaderboardEntry[]> {
   const response = await fetch("/v1/leaderboard");
   if (!response.ok)
     throw new Error("The leaderboard is unavailable right now.");
-  let rawBody: unknown;
-  try {
-    rawBody = await response.json();
-  } catch {
-    throw new Error("The leaderboard returned an unreadable response");
-  }
-  const parsed = leaderboardResponse.safeParse(rawBody);
-  if (!parsed.success) {
-    throw new Error("The leaderboard returned an unexpected response");
-  }
-  return parsed.data.map((entry) => ({
+  const body = await parseBody(
+    response,
+    leaderboardResponse,
+    "The leaderboard",
+  );
+  return body.map((entry) => ({
     login: entry.login,
     totalTokens: entry.total_tokens,
-    rarity: entry.rarity ?? null,
+    rarity: entry.rarity,
   }));
 }
 
@@ -130,17 +134,8 @@ async function fetchGithubApp(): Promise<GithubApp> {
   if (!response.ok) {
     throw new Error(`The GitToken API answered ${response.status}`);
   }
-  let rawBody: unknown;
-  try {
-    rawBody = await response.json();
-  } catch {
-    throw new Error("The GitToken API returned an unreadable response");
-  }
-  const parsed = githubAppResponse.safeParse(rawBody);
-  if (!parsed.success) {
-    throw new Error("The GitToken API returned an unexpected response");
-  }
-  return { isConfigured: true, installUrl: parsed.data.install_url };
+  const body = await parseBody(response, githubAppResponse, "The GitToken API");
+  return { isConfigured: true, installUrl: body.install_url };
 }
 
 export function useGithubApp() {
