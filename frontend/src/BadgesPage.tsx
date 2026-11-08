@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { type Badge, badges } from "./badges";
 import { glassClassName, pressableClassName } from "./glass";
 import { LoginForm } from "./LoginForm";
+import { avatarUrl, badgesPagePath, profilePath } from "./paths";
 import { type Theme, useTheme } from "./theme";
 
 type SnippetFormat = "README" | "Markdown" | "URL";
@@ -18,7 +19,7 @@ function snippet(
 ): string {
   const { origin } = window.location;
   const badgeUrl = `${origin}${badge.path(login, theme)}`;
-  const profileUrl = `${origin}/${encodeURIComponent(login)}`;
+  const profileUrl = `${origin}${profilePath(login)}`;
   const alt = `${login}'s GitToken ${badge.name.toLowerCase()}`;
   const snippetByFormat: Record<SnippetFormat, string> = {
     README: [
@@ -154,7 +155,7 @@ export function BadgesPage({
             className={`flex max-w-full items-center gap-2 rounded-full p-1 ${glassClassName}`}
           >
             <img
-              src={`https://avatars.githubusercontent.com/${encodeURIComponent(login)}?size=64`}
+              src={avatarUrl(login)}
               alt=""
               className="size-8 shrink-0 rounded-full ring-1 ring-night/30 dark:ring-white/30"
             />
@@ -172,13 +173,7 @@ export function BadgesPage({
         <LoginForm
           initialLogin=""
           submitLabel="Show badges"
-          onSubmitLogin={(typedLogin) =>
-            navigate(
-              typedLogin === ""
-                ? "/badges"
-                : `/${encodeURIComponent(typedLogin)}/badges`,
-            )
-          }
+          onSubmitLogin={(typedLogin) => navigate(badgesPagePath(typedLogin))}
         />
       ) : (
         badges.map((badge) => (

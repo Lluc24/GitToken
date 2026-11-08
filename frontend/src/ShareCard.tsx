@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { profileCardPath, withConnectedKey } from "./badges";
 import { formatTokens } from "./format";
 import { pressableClassName } from "./glass";
+import { badgesPagePath, profilePath } from "./paths";
 import { type Theme, useTheme } from "./theme";
 
 type ShareCardProps = {
@@ -40,7 +41,7 @@ export function ShareCard({
   const [status, setStatus] = useState("");
   const theme = useTheme();
   const [cardFile, setCardFile] = useState<File | null>(null);
-  const profileUrl = `${window.location.origin}/${encodeURIComponent(login)}`;
+  const profileUrl = `${window.location.origin}${profilePath(login)}`;
   const postText = `${login} spent an estimated ${formatTokens(totalTokens)} tokens through coding agents. What's your GitToken card?`;
 
   // Safari only opens the share sheet right after a click, so the image is ready before it.
@@ -117,7 +118,7 @@ export function ShareCard({
         Share
       </button>
       <Link
-        to={`/${encodeURIComponent(login)}/badges`}
+        to={badgesPagePath(login)}
         className="py-2 text-night/60 dark:text-white/60 text-sm hover:text-night dark:hover:text-white"
       >
         Add it to your README

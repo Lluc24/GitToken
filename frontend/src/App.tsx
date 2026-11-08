@@ -16,6 +16,7 @@ import { formatTokens } from "./format";
 import { glassClassName, pressableClassName } from "./glass";
 import { Leaderboard } from "./Leaderboard";
 import { LoginForm } from "./LoginForm";
+import { badgesPagePath, profilePath } from "./paths";
 import { ShareCard } from "./ShareCard";
 import { ThemeToggle } from "./ThemeToggle";
 import { useTheme } from "./theme";
@@ -94,9 +95,7 @@ function ProfilePage({
         key={submittedLogin}
         initialLogin={submittedLogin}
         submitLabel="Estimate"
-        onSubmitLogin={(login) =>
-          navigate(login === "" ? "/" : `/${encodeURIComponent(login)}`)
-        }
+        onSubmitLogin={(login) => navigate(profilePath(login))}
       />
       {submittedLogin !== "" && (
         <ProfileTokensResult
@@ -111,8 +110,6 @@ function ProfilePage({
 export function App() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [lastLogin, setLastLogin] = useState("");
-  const lastProfilePath =
-    lastLogin === "" ? "/" : `/${encodeURIComponent(lastLogin)}`;
 
   return (
     <BrowserRouter>
@@ -126,7 +123,7 @@ export function App() {
           className={`sticky top-4 z-10 mx-auto mt-4 flex w-[calc(100%-2rem)] max-w-3xl flex-wrap items-center justify-between gap-x-1 py-2 pr-2 pl-4 ${isMenuOpen ? "rounded-[28px] sm:rounded-full" : "rounded-full"} ${glassClassName}`}
         >
           <Link
-            to={lastProfilePath}
+            to={profilePath(lastLogin)}
             className="flex items-center gap-2.5 font-bold text-lg tracking-tight"
             onClick={() => setIsMenuOpen(false)}
           >
@@ -167,11 +164,7 @@ export function App() {
               Leaderboard
             </Link>
             <Link
-              to={
-                lastLogin === ""
-                  ? "/badges"
-                  : `/${encodeURIComponent(lastLogin)}/badges`
-              }
+              to={badgesPagePath(lastLogin)}
               className={`rounded-full px-4 py-2 text-night/80 dark:text-white/80 hover:bg-night/15 dark:hover:bg-white/15 hover:text-night dark:hover:text-white ${pressableClassName}`}
               onClick={() => setIsMenuOpen(false)}
             >
