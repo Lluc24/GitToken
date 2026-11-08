@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import { type Rarity, useLeaderboard } from "./api";
 import { formatTokens } from "./format";
 import { glassClassName } from "./glass";
+import { avatarUrl, profilePath } from "./paths";
 
 const medalClassNames = [
   "bg-gradient-to-br from-amber-200 to-amber-500 text-night",
@@ -49,13 +50,13 @@ export function Leaderboard() {
                 {index + 1}
               </span>
               <img
-                src={`https://avatars.githubusercontent.com/${encodeURIComponent(profile.login)}?size=64`}
+                src={avatarUrl(profile.login)}
                 alt=""
                 className="size-8 rounded-full ring-1 ring-night/30 dark:ring-white/30"
               />
               <div className="min-w-0 flex-1 sm:flex sm:items-center sm:gap-3">
                 <Link
-                  to={`/${encodeURIComponent(profile.login)}`}
+                  to={profilePath(profile.login)}
                   className="block truncate font-medium after:absolute after:inset-0 after:rounded-2xl hover:text-cyan-700 sm:flex-1 dark:hover:text-cyan-200"
                 >
                   {profile.login}
