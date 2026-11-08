@@ -3,7 +3,7 @@ import hmac
 from collections import Counter
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from types import MappingProxyType
 from typing import Literal, NewType, Self
@@ -13,6 +13,7 @@ import jwt
 from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey
 from cryptography.hazmat.primitives.serialization import load_pem_private_key
 from pydantic import (
+    AwareDatetime,
     BaseModel,
     Field,
     SecretStr,
@@ -53,8 +54,7 @@ _AVATAR_SIZE_PIXELS = 552
 _AVATAR_MEDIA_TYPES = frozenset({"image/png", "image/jpeg", "image/gif"})
 _TIMEOUT_SECONDS = 30
 _MAXIMUM_CONCURRENT_REPOSITORIES = 8
-# GitHub timestamps are UTC ISO 8601, so they compare correctly as strings.
-_COMMITS_SINCE = "2025-01-01T00:00:00Z"
+_COMMITS_SINCE = datetime(2025, 1, 1, tzinfo=UTC)
 # GitHub rejects app tokens that expire more than 10 minutes ahead; a minute back absorbs clock drift.
 _APP_TOKEN_ISSUED_EARLIER = timedelta(minutes=1)
 _APP_TOKEN_LIFETIME = timedelta(minutes=9)
@@ -148,8 +148,8 @@ query($repositoryId: ID!, $since: GitTimestamp!, $cursor: String) {
 
 
 class _Repository(BaseModel):
-    id: str
-    pushed_at: str | None = Field(alias="pushedAt")
+    node_id: str = Field(alias="id")
+    pushed_at: AwareDatetime | None = Field(alias="pushedAt")
 
 
 class _PageInfo(BaseModel):
@@ -161,6 +161,11 @@ class _PageInfo(BaseModel):
         if self.has_next_page and not self.end_cursor:
             raise ValueError("a next page requires a non-empty cursor")
         return self
+
+    @property
+    def next_cursor(self) -> str | None:
+        """Post: the non-empty cursor of the next page, or None on the last page."""
+        return self.end_cursor if self.has_next_page else None
 
 
 class _Repositories(BaseModel):
@@ -227,6 +232,10 @@ class _CommitsData(BaseModel):
     node: _RepositoryCommits
 
 
+def _is_pushed_since_commits_start(pushed_at: datetime | None) -> bool:
+    return pushed_at is not None and pushed_at >= _COMMITS_SINCE
+
+
 async def _query(
     github_client: GithubApiClient,
     query: str,
@@ -250,13 +259,17 @@ async def _query(
 
 
 async def _count_repository_lines_added_by_agent(
-    github_client: GithubApiClient, repository_id: str, headers: Mapping[str, str]
+    github_client: GithubApiClient, repository_node_id: str, headers: Mapping[str, str]
 ) -> Counter[Agent]:
     lines_added_by_agent: Counter[Agent] = Counter()
     cursor: str | None = None
     seen_cursors: set[str] = set()
     while True:
-        variables = {"repositoryId": repository_id, "since": _COMMITS_SINCE, "cursor": cursor}
+        variables = {
+            "repositoryId": repository_node_id,
+            "since": _COMMITS_SINCE.isoformat(),
+            "cursor": cursor,
+        }
         try:
             data = _CommitsData.model_validate(
                 await _query(github_client, _COMMITS_QUERY, variables, headers)
@@ -270,19 +283,26 @@ async def _count_repository_lines_added_by_agent(
             agent = find_agent(author.email for author in commit.authors.nodes)
             if agent is not None:
                 lines_added_by_agent[agent] += commit.additions
-        if not history.page_info.has_next_page:
+        next_cursor = history.page_info.next_cursor
+        if next_cursor is None:
             return lines_added_by_agent
-        next_cursor = history.page_info.end_cursor
-        if next_cursor is None or next_cursor in seen_cursors:
-            raise GithubRequestError("GitHub returned an invalid commit pagination cursor")
+        if next_cursor in seen_cursors:
+            raise GithubRequestError("GitHub repeated a commit pagination cursor")
         seen_cursors.add(next_cursor)
         cursor = next_cursor
 
 
-async def _fetch_repositories(
+@dataclass(frozen=True)
+class _PublicRepositories:
+    github_id: GithubUserId
+    repository_node_ids: tuple[str, ...]
+
+
+async def _fetch_public_repositories(
     github_client: GithubApiClient, login: VerifiedGithubUsername
-) -> _User:
-    repositories: list[_Repository] = []
+) -> _PublicRepositories:
+    """Post: the account and its public non-fork repositories pushed since 2025."""
+    repository_node_ids: list[str] = []
     cursor: str | None = None
     seen_cursors: set[str] = set()
     while True:
@@ -297,42 +317,42 @@ async def _fetch_repositories(
         if data.user is None:
             raise ProfileNotFoundError(f"no GitHub user named {login!r}")
         page = data.user.repositories
-        repositories.extend(
-            repository
+        repository_node_ids.extend(
+            repository.node_id
             for repository in page.nodes
-            if repository.pushed_at is not None and repository.pushed_at >= _COMMITS_SINCE
+            if _is_pushed_since_commits_start(repository.pushed_at)
         )
-        if not page.page_info.has_next_page or any(
+        next_cursor = page.page_info.next_cursor
+        # The query lists the most recently pushed first, so one older repository ends the listing.
+        if next_cursor is None or any(
             repository.pushed_at is not None and repository.pushed_at < _COMMITS_SINCE
             for repository in page.nodes
         ):
-            return _User(
-                databaseId=data.user.database_id,
-                repositories=_Repositories(pageInfo=page.page_info, nodes=repositories),
+            return _PublicRepositories(
+                GithubUserId(data.user.database_id), tuple(repository_node_ids)
             )
-        next_cursor = page.page_info.end_cursor
-        if next_cursor is None or next_cursor in seen_cursors:
-            raise GithubRequestError("GitHub returned an invalid repository pagination cursor")
+        if next_cursor in seen_cursors:
+            raise GithubRequestError("GitHub repeated a repository pagination cursor")
         seen_cursors.add(next_cursor)
         cursor = next_cursor
 
 
 async def _count_repositories_lines_added_by_agent(
-    github_client: GithubApiClient, repository_ids: list[str], headers: Mapping[str, str]
+    github_client: GithubApiClient, repository_node_ids: tuple[str, ...], headers: Mapping[str, str]
 ) -> list[Counter[Agent]]:
-    """Post: one count per repository, in the order of repository_ids."""
-    pending_repositories = iter(enumerate(repository_ids))
-    counts: list[Counter[Agent]] = [Counter() for _ in repository_ids]
+    """Post: one count per repository, in the order of repository_node_ids."""
+    pending_repositories = iter(enumerate(repository_node_ids))
+    counts: list[Counter[Agent]] = [Counter() for _ in repository_node_ids]
 
     async def count_next_repositories() -> None:
-        for index, repository_id in pending_repositories:
+        for index, repository_node_id in pending_repositories:
             counts[index] = await _count_repository_lines_added_by_agent(
-                github_client, repository_id, headers
+                github_client, repository_node_id, headers
             )
 
     workers = [
         asyncio.create_task(count_next_repositories())
-        for _ in range(min(_MAXIMUM_CONCURRENT_REPOSITORIES, len(repository_ids)))
+        for _ in range(min(_MAXIMUM_CONCURRENT_REPOSITORIES, len(repository_node_ids)))
     ]
     try:
         await asyncio.gather(*workers)
@@ -349,12 +369,12 @@ async def fetch_github_profile(
     """Post: lines added by each agent in commits since 2025 across public non-fork repositories,
     with no private repositories, or ProfileNotFoundError. Failed or incomplete GitHub responses
     raise GithubRequestError."""
-    user = await _fetch_repositories(github_client, login)
+    public_repositories = await _fetch_public_repositories(github_client, login)
     counts = await _count_repositories_lines_added_by_agent(
-        github_client, [repository.id for repository in user.repositories.nodes], {}
+        github_client, public_repositories.repository_node_ids, {}
     )
     return GithubProfile(
-        GithubUserId(user.database_id), login, MappingProxyType(dict(sum(counts, Counter()))), ()
+        public_repositories.github_id, login, MappingProxyType(dict(sum(counts, Counter()))), ()
     )
 
 
@@ -383,7 +403,7 @@ class _InstallationRepository(BaseModel):
     node_id: str
     private: bool
     fork: bool
-    pushed_at: str | None
+    pushed_at: AwareDatetime | None
     owner: _Owner
 
 
@@ -457,7 +477,7 @@ async def _fetch_installation_repositories(
             params={"per_page": _REPOSITORIES_PER_PAGE, "page": page},
             headers=installation_authorization,
         )
-        body = await _request_rest(github_client, request, TypeAdapter(_InstallationRepositories))
+        body = await _request_rest(github_client, request, _INSTALLATION_REPOSITORIES)
         repositories.extend(body.repositories)
         if len(repositories) >= body.total_count or not body.repositories:
             return repositories
@@ -598,12 +618,11 @@ async def fetch_private_repositories(
             if repository.private
             and not repository.fork
             and repository.owner.id == profile.github_id
-            and repository.pushed_at is not None
-            and repository.pushed_at >= _COMMITS_SINCE
+            and _is_pushed_since_commits_start(repository.pushed_at)
         ]
         counts = await _count_repositories_lines_added_by_agent(
             github_client,
-            [repository.node_id for repository in repositories],
+            tuple(repository.node_id for repository in repositories),
             installation_authorization,
         )
         await _revoke_installation_token(github_client, installation_authorization)
