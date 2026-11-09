@@ -44,7 +44,7 @@ Profiles and cards are cached by the CDN for a day, matching the Supabase cache.
 make setup     # install everything, enable the pre-commit hook
 FASTAPI_ENV=development GITHUB_TOKEN=$(gh auth token) uv run uvicorn gittoken.api:app   # API on :8000
 make dev-web   # page on http://localhost:5173, proxies /v1 to the API
-make check     # format, lint, typecheck, tests: the same gate CI runs
+make check     # format, lint, typecheck: the same gate CI runs
 make fix       # auto-format and auto-fix
 ```
 
