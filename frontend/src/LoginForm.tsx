@@ -18,10 +18,10 @@ export function LoginForm({
   function submitLogin(event: FormEvent) {
     event.preventDefault();
     const login = typedLogin.trim();
+    onSubmitLogin(login);
     if (login !== "") {
       sendProfileSearchBeacon(login);
     }
-    onSubmitLogin(login);
   }
 
   return (

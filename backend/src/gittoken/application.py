@@ -27,6 +27,7 @@ from gittoken.domain import (
     ProfileNotFoundError,
     ProfileStoreError,
     RepositoriesRevoked,
+    SlackNotificationError,
     VerifiedGithubUsername,
     without_withdrawn_repositories,
 )
@@ -41,6 +42,7 @@ from gittoken.github import (
     fetch_personal_installation,
     fetch_private_repositories,
 )
+from gittoken.slack import SlackActivityClient, notify_profile_search
 from gittoken.telemetry import tracer
 
 # A verified owner can authorize again at will, so a profile scanned this recently is kept to
@@ -191,3 +193,20 @@ async def finish_authorized_installation(
             "Installation setup authorized by a user other than its account"
         )
     return installation.login
+
+
+async def report_profile_search(
+    slack_client: SlackActivityClient, login: VerifiedGithubUsername
+) -> None:
+    """Post: Slack was told about the search, or the failure was logged. The activity feed is
+    best effort, so its failure never reaches the visitor; the log leaves out the login, as
+    warnings are forwarded to Sentry."""
+    started_at = perf_counter()
+    try:
+        await notify_profile_search(slack_client, login)
+    except SlackNotificationError as error:
+        logger.bind(
+            event="slack_activity_error",
+            error_type=str(error),
+            duration_seconds=perf_counter() - started_at,
+        ).warning("Slack activity notification failed")

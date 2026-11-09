@@ -1,10 +1,10 @@
+import asyncio
 from dataclasses import dataclass
 
 import httpx
-from loguru import logger
 from pydantic import SecretStr
 
-from gittoken.domain import VerifiedGithubUsername
+from gittoken.domain import SlackNotificationError, VerifiedGithubUsername
 
 _TIMEOUT_SECONDS = 2
 
@@ -23,14 +23,14 @@ def create_slack_activity_client(webhook_url: SecretStr) -> SlackActivityClient:
 
 
 async def notify_profile_search(client: SlackActivityClient, login: VerifiedGithubUsername) -> None:
-    """Post: Slack was sent one message naming login, or the failure was logged.
-    The activity feed is best effort, so a failure never reaches the visitor; the log names
-    neither the login nor the webhook URL, as warnings are forwarded to Sentry."""
+    """Post: Slack accepted one message naming login within two seconds, or
+    SlackNotificationError is raised without the webhook URL in its message."""
     try:
-        response = await client.http.post(
-            client.webhook_url.get_secret_value(),
-            json={"text": f"GitToken profile search: {login}"},
-        )
+        async with asyncio.timeout(_TIMEOUT_SECONDS):
+            response = await client.http.post(
+                client.webhook_url.get_secret_value(),
+                json={"text": f"GitToken profile search: {login}"},
+            )
         response.raise_for_status()
-    except httpx.HTTPError as error:
-        logger.warning("Slack activity notification failed: {}", type(error).__name__)
+    except (httpx.HTTPError, TimeoutError) as error:
+        raise SlackNotificationError(type(error).__name__) from None

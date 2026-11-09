@@ -21,7 +21,15 @@ from fastapi import (
 )
 from fastapi.responses import RedirectResponse
 from loguru import logger
-from pydantic import BaseModel, Field, HttpUrl, PositiveInt, SecretStr, model_validator
+from pydantic import (
+    BaseModel,
+    Field,
+    HttpUrl,
+    PositiveInt,
+    SecretStr,
+    field_validator,
+    model_validator,
+)
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sentry_sdk.integrations.loguru import LoguruIntegration
 
@@ -31,6 +39,7 @@ from gittoken.application import (
     find_installation_login,
     finish_authorized_installation,
     lookup_profile,
+    report_profile_search,
     withdraw_consent,
 )
 from gittoken.badge import (
@@ -70,11 +79,7 @@ from gittoken.github import (
     load_github_app_private_key,
     parse_webhook,
 )
-from gittoken.slack import (
-    SlackActivityClient,
-    create_slack_activity_client,
-    notify_profile_search,
-)
+from gittoken.slack import SlackActivityClient, create_slack_activity_client
 from gittoken.telemetry import configure_tracing
 
 # Profiles are rescanned at most daily, so the CDN may keep these responses for a day.
@@ -84,6 +89,7 @@ _BADGE_LOOKUP_WAIT_SECONDS = 3
 _SCANNING_CACHE_CONTROL = "public, max-age=0, s-maxage=60"
 # Badge errors are drawn as a card with status 200, as a broken image explains nothing in a README.
 _BADGE_ERROR_CACHE_CONTROL = "public, max-age=0, s-maxage=600"
+_SLACK_WEBHOOK_URL_PREFIX = "https://hooks.slack.com/"
 
 
 class ApiSettings(BaseSettings):
@@ -123,6 +129,17 @@ class ApiSettings(BaseSettings):
                 self.github_app_client_secret,
             )
         return None
+
+    @field_validator("slack_activity_webhook_url")
+    @classmethod
+    def require_slack_webhook_url(cls, webhook_url: SecretStr | None) -> SecretStr | None:
+        if webhook_url is not None and not webhook_url.get_secret_value().startswith(
+            _SLACK_WEBHOOK_URL_PREFIX
+        ):
+            raise ValueError(
+                f"SLACK_ACTIVITY_WEBHOOK_URL must start with {_SLACK_WEBHOOK_URL_PREFIX}"
+            )
+        return webhook_url
 
     @model_validator(mode="after")
     def require_all_or_no_github_app_settings(self) -> Self:
@@ -337,7 +354,7 @@ def _add_profile_search_route(app: FastAPI, slack_client: SlackActivityClient | 
         answering, within its two-second timeout, as a serverless function may be frozen once it
         has answered; a failed send still answers 202."""
         if slack_client is not None:
-            await notify_profile_search(slack_client, event.login)
+            await report_profile_search(slack_client, event.login)
 
 
 def create_app() -> FastAPI:

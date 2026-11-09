@@ -97,6 +97,10 @@ class ProfileStoreError(Exception):
     pass
 
 
+class SlackNotificationError(Exception):
+    pass
+
+
 class InvalidWebhookError(Exception):
     pass
 

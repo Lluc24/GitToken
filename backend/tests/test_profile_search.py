@@ -6,9 +6,10 @@ from fastapi import FastAPI, status
 from fastapi.testclient import TestClient
 from gittoken import api
 from gittoken.slack import SlackActivityClient
+from loguru import logger
 from pydantic import SecretStr
 
-_WEBHOOK_URL = "https://hooks.slack.test/services/T0/B0/secret"
+_WEBHOOK_URL = "https://hooks.slack.com/services/T0/B0/secret"
 
 type SlackHandler = Callable[[httpx.Request], httpx.Response]
 
@@ -69,9 +70,18 @@ def test_profile_search_without_webhook_url_sends_nothing(
 def test_profile_search_tolerates_slack_failure(
     monkeypatch: pytest.MonkeyPatch, handle_slack: SlackHandler
 ) -> None:
-    response = _post_search(_create_app(monkeypatch, _WEBHOOK_URL, handle_slack), "octocat")
+    app = _create_app(monkeypatch, _WEBHOOK_URL, handle_slack)
+    log_lines: list[str] = []
+    log_sink_id = logger.add(log_lines.append, format="{message} {extra}")
+    try:
+        response = _post_search(app, "octocat")
+    finally:
+        logger.remove(log_sink_id)
 
     assert response.status_code == status.HTTP_202_ACCEPTED
+    assert len(log_lines) == 1
+    assert "octocat" not in log_lines[0]
+    assert _WEBHOOK_URL not in log_lines[0]
 
 
 def test_profile_search_rejects_an_invalid_login(monkeypatch: pytest.MonkeyPatch) -> None:
