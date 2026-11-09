@@ -70,6 +70,11 @@ from gittoken.github import (
     load_github_app_private_key,
     parse_webhook,
 )
+from gittoken.slack import (
+    SlackActivityClient,
+    create_slack_activity_client,
+    notify_profile_search,
+)
 from gittoken.telemetry import configure_tracing
 
 # Profiles are rescanned at most daily, so the CDN may keep these responses for a day.
@@ -96,6 +101,7 @@ class ApiSettings(BaseSettings):
     github_app_slug: str | None = Field(default=None, pattern="^[a-z0-9][a-z0-9-]*$")
     github_app_client_id: str | None = Field(default=None, min_length=1)
     github_app_client_secret: SecretStr | None = None
+    slack_activity_webhook_url: SecretStr | None = None
 
     @property
     def github_app(self) -> GithubApp | None:
@@ -146,6 +152,10 @@ class ProfileTokensResponse(BaseModel):
     rarity: Rarity
     tokens_by_agent: dict[Agent, int]
     includes_private_repositories: bool
+
+
+class ProfileSearchEvent(BaseModel):
+    login: Annotated[VerifiedGithubUsername, Field(pattern=GITHUB_LOGIN_PATTERN)]
 
 
 class LeaderboardEntryResponse(BaseModel):
@@ -320,6 +330,16 @@ def _add_github_app_routes(
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "GitHub App is not configured")
 
 
+def _add_profile_search_route(app: FastAPI, slack_client: SlackActivityClient | None) -> None:
+    @app.post("/v1/events/profile-search", status_code=status.HTTP_202_ACCEPTED)
+    async def receive_profile_search(event: ProfileSearchEvent) -> None:
+        """The site sends this when a visitor submits a search. The Slack message is sent before
+        answering, within its two-second timeout, as a serverless function may be frozen once it
+        has answered; a failed send still answers 202."""
+        if slack_client is not None:
+            await notify_profile_search(slack_client, event.login)
+
+
 def create_app() -> FastAPI:
     settings = ApiSettings()
     logger.remove()
@@ -346,6 +366,11 @@ def create_app() -> FastAPI:
     avatar_client = create_github_avatar_client()
     oauth_client = create_github_oauth_client()
     supabase_client = create_supabase_client(settings.supabase_url, settings.supabase_secret_key)
+    slack_client = (
+        create_slack_activity_client(settings.slack_activity_webhook_url)
+        if settings.slack_activity_webhook_url is not None
+        else None
+    )
 
     @asynccontextmanager
     async def close_clients_on_shutdown(_: FastAPI) -> AsyncIterator[None]:
@@ -354,6 +379,8 @@ def create_app() -> FastAPI:
         await avatar_client.aclose()
         await oauth_client.aclose()
         await supabase_client.aclose()
+        if slack_client is not None:
+            await slack_client.aclose()
 
     app = FastAPI(title="GitToken", lifespan=close_clients_on_shutdown)
     lookup_profile_by_login = partial(lookup_profile, github_client, supabase_client, github_app)
@@ -383,6 +410,8 @@ def create_app() -> FastAPI:
             tokens_by_agent=profile.tokens_by_agent,
             includes_private_repositories=profile.includes_private_repositories,
         )
+
+    _add_profile_search_route(app, slack_client)
 
     @app.get("/v1/badges/{login}.svg")
     async def get_badge(

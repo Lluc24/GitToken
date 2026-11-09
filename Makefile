@@ -10,6 +10,7 @@ check:
 	uv run ruff check
 	uv run mypy backend/src
 	uv run mypy infra
+	uv run pytest
 	cd frontend && pnpm check
 	cd frontend && pnpm build
 

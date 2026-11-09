@@ -2,7 +2,7 @@
 members = ["backend", "infra"]
 
 [dependency-groups]
-dev = ["ruff>=0.17.3", "mypy>=2.4.1"]
+dev = ["ruff>=0.17.3", "mypy>=2.4.1", "pytest>=9.2.0"]
 
 [tool.ruff]
 target-version = "py313"
@@ -17,9 +17,15 @@ select = [
 # E501: the formatter owns line length. TRY003: boundary errors must name expected vs received.
 ignore = ["E501", "TRY003"]
 
+[tool.ruff.lint.per-file-ignores]
+"backend/tests/**" = ["S101"]
+
 [tool.ruff.lint.flake8-tidy-imports.banned-api]
 "typing.Any".msg = "No Any: name the real type, or parse the value with Pydantic."
 "typing.cast".msg = "No cast: parse the value into its type instead."
+
+[tool.pytest.ini_options]
+testpaths = ["backend/tests"]
 
 [tool.mypy]
 python_version = "3.13"

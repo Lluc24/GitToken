@@ -146,3 +146,11 @@ export function useGithubApp() {
     staleTime: Number.POSITIVE_INFINITY,
   });
 }
+
+/** Pre: login is not empty. Post: the search is queued for the backend; navigation never waits on it and a lost beacon is ignored. */
+export function sendProfileSearchBeacon(login: string): void {
+  navigator.sendBeacon(
+    "/v1/events/profile-search",
+    new Blob([JSON.stringify({ login })], { type: "application/json" }),
+  );
+}

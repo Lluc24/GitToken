@@ -1,4 +1,5 @@
 import { type FormEvent, useState } from "react";
+import { sendProfileSearchBeacon } from "./api";
 import { glassClassName, pressableClassName } from "./glass";
 
 type LoginFormProps = {
@@ -16,7 +17,11 @@ export function LoginForm({
 
   function submitLogin(event: FormEvent) {
     event.preventDefault();
-    onSubmitLogin(typedLogin.trim());
+    const login = typedLogin.trim();
+    if (login !== "") {
+      sendProfileSearchBeacon(login);
+    }
+    onSubmitLogin(login);
   }
 
   return (
