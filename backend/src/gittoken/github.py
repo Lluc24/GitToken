@@ -593,8 +593,8 @@ async def fetch_private_repositories(
 ) -> tuple[PrivateRepository, ...]:
     """Post: lines added by each agent since 2025 in every private non-fork repository the
     profile's account owns and granted to the app; empty when the account has not installed it
-    or GitHub suspended the installation. The installation token is revoked whether or not the scan
-    worked."""
+    or GitHub suspended the installation. The installation token is revoked before returning or
+    raising."""
     installation = await _fetch_installation(
         github_client, _app_authorization(github_app, now), f"/users/{profile.login}/installation"
     )
