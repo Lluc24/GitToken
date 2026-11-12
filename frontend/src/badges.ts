@@ -1,3 +1,4 @@
+import { badgeCardPath, profileCardPath } from "./paths";
 import type { Theme } from "./theme";
 
 export type Badge = {
@@ -15,10 +16,6 @@ export function withConnectedKey(path: string, connectedKey: string): string {
     : `${path}${separator}connected=${encodeURIComponent(connectedKey)}`;
 }
 
-export function profileCardPath(login: string, theme: Theme): string {
-  return `/v1/badges/${encodeURIComponent(login)}/profile.svg?theme=${theme}`;
-}
-
 export const badges: Badge[] = [
   {
     name: "Profile",
@@ -28,7 +25,6 @@ export const badges: Badge[] = [
   {
     name: "Card",
     description: "Rarity, total tokens and top agents, without the photo.",
-    path: (login, theme) =>
-      `/v1/badges/${encodeURIComponent(login)}.svg?theme=${theme}`,
+    path: badgeCardPath,
   },
 ];

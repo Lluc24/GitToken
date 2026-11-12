@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { profileCardPath, withConnectedKey } from "./badges";
+import { withConnectedKey } from "./badges";
 import { formatTokens } from "./format";
 import { pressableClassName } from "./glass";
-import { badgesPagePath, profilePath } from "./paths";
+import { badgesPagePath, profileCardPath, profilePath } from "./paths";
 import { type Theme, useTheme } from "./theme";
 
 type ShareCardProps = {
