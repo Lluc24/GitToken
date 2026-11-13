@@ -10,6 +10,10 @@ type SnippetFormat = "README" | "Markdown" | "URL";
 
 const snippetFormats: SnippetFormat[] = ["README", "Markdown", "URL"];
 
+const copiedLabelMilliseconds = 2000;
+
+type CopyOutcome = { format: SnippetFormat; result: "copied" | "failed" };
+
 // README follows the reader's GitHub theme through <picture>; the others use the site's theme.
 function snippet(
   format: SnippetFormat,
@@ -70,12 +74,26 @@ function SegmentedControl<Option extends string>({
 function BadgeSection({ login, badge }: { login: string; badge: Badge }) {
   const theme = useTheme();
   const [format, setFormat] = useState<SnippetFormat>("README");
-  const [copiedFormat, setCopiedFormat] = useState<SnippetFormat | null>(null);
+  const [copyOutcome, setCopyOutcome] = useState<CopyOutcome | null>(null);
   const text = snippet(format, login, badge, theme);
+  const shownOutcome = copyOutcome?.format === format ? copyOutcome : null;
 
-  async function copySnippet() {
-    await navigator.clipboard.writeText(text);
-    setCopiedFormat(format);
+  useEffect(() => {
+    if (copyOutcome?.result === "copied") {
+      const timeoutId = setTimeout(
+        () => setCopyOutcome(null),
+        copiedLabelMilliseconds,
+      );
+      return () => clearTimeout(timeoutId);
+    }
+    return undefined;
+  }, [copyOutcome]);
+
+  function copySnippet() {
+    navigator.clipboard.writeText(text).then(
+      () => setCopyOutcome({ format, result: "copied" }),
+      () => setCopyOutcome({ format, result: "failed" }),
+    );
   }
 
   return (
@@ -117,12 +135,20 @@ function BadgeSection({ login, badge }: { login: string; badge: Badge }) {
           onClick={copySnippet}
           className={`shrink-0 rounded-full bg-gradient-to-br from-cyan-300 via-violet-400 to-fuchsia-400 px-4 py-2 font-semibold sm:py-1.5 text-night text-sm ${pressableClassName}`}
         >
-          {copiedFormat === format ? "Copied ✓" : "Copy"}
+          {shownOutcome?.result === "copied" ? "Copied ✓" : "Copy"}
         </button>
       </div>
       <p role="status" className="sr-only">
-        {copiedFormat === format ? `${format} snippet copied` : ""}
+        {shownOutcome?.result === "copied" ? `${format} snippet copied` : ""}
       </p>
+      {shownOutcome?.result === "failed" && (
+        <p
+          role="alert"
+          className="mt-2 px-1 text-night/60 text-sm dark:text-white/60"
+        >
+          Couldn't copy. Select the snippet and copy it yourself.
+        </p>
+      )}
     </section>
   );
 }
