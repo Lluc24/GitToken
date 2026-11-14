@@ -1,9 +1,8 @@
 import asyncio
 import logging
 import sys
-from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
-from functools import partial
 from typing import Annotated
 from uuid import uuid4
 
@@ -177,16 +176,18 @@ async def _finish_lookup(lookup: asyncio.Task[GithubProfile]) -> None:
     await lookup
 
 
-class _RunningBadgeLookups:
-    """Invariant: at most one running lookup per login, so a page showing two badges scans once."""
+class _ProfileLookups:
+    """Invariant: at most one running lookup per login, so concurrent requests scan once."""
 
     def __init__(
         self,
-        lookup_profile_by_login: Callable[
-            [VerifiedGithubUsername], Coroutine[object, object, GithubProfile]
-        ],
+        github_client: GithubApiClient,
+        supabase_client: SupabaseClient,
+        github_app: GithubApp,
     ) -> None:
-        self._lookup_profile_by_login = lookup_profile_by_login
+        self._github_client = github_client
+        self._supabase_client = supabase_client
+        self._github_app = github_app
         self._running_lookup_by_login: dict[
             VerifiedGithubUsername, asyncio.Task[GithubProfile]
         ] = {}
@@ -194,7 +195,7 @@ class _RunningBadgeLookups:
     def start_or_join(self, login: VerifiedGithubUsername) -> asyncio.Task[GithubProfile]:
         if login not in self._running_lookup_by_login:
             self._running_lookup_by_login[login] = asyncio.create_task(
-                self._lookup_profile_by_login(login)
+                lookup_profile(self._github_client, self._supabase_client, self._github_app, login)
             )
             self._running_lookup_by_login[login].add_done_callback(
                 lambda _: self._running_lookup_by_login.pop(login)
@@ -356,8 +357,7 @@ def create_app() -> FastAPI:
         await slack_client.aclose()
 
     app = FastAPI(title="GitToken", lifespan=close_clients_on_shutdown)
-    lookup_profile_by_login = partial(lookup_profile, github_client, supabase_client, github_app)
-    running_badge_lookups = _RunningBadgeLookups(lookup_profile_by_login)
+    profile_lookups = _ProfileLookups(github_client, supabase_client, github_app)
 
     @app.get("/v1/users/{login}")
     async def get_user_tokens(
@@ -365,7 +365,7 @@ def create_app() -> FastAPI:
         response: Response,
     ) -> ProfileTokensResponse:
         try:
-            profile = await lookup_profile_by_login(login)
+            profile = await asyncio.shield(profile_lookups.start_or_join(login))
         except ProfileNotFoundError as error:
             raise HTTPException(
                 status.HTTP_404_NOT_FOUND, str(error), headers={"Cache-Control": "no-store"}
@@ -399,7 +399,7 @@ def create_app() -> FastAPI:
         return await _badge_response(
             login,
             theme,
-            running_badge_lookups.start_or_join(login),
+            profile_lookups.start_or_join(login),
             background_tasks,
             render_card,
         )
@@ -417,7 +417,7 @@ def create_app() -> FastAPI:
         return await _badge_response(
             login,
             theme,
-            running_badge_lookups.start_or_join(login),
+            profile_lookups.start_or_join(login),
             background_tasks,
             render_card,
         )
