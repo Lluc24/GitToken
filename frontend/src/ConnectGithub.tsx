@@ -1,15 +1,20 @@
-import type { UseQueryResult } from "@tanstack/react-query";
-import { useId, useState } from "react";
-import { type GithubApp, useGithubApp } from "./api";
-import { glassClassName, pressableClassName } from "./glass";
+import { Link, useSearchParams } from "react-router-dom";
+import { useProfileTokens } from "./api";
+import { readConnectedKey } from "./badges";
+import { pressableClassName } from "./glass";
+import { searchFocusPath } from "./paths";
 
-const connectLabel = "Connect GitHub to also scan your private repos";
+const buttonClassName =
+  "flex items-center gap-1.5 rounded-full px-3.5 py-2 font-semibold text-sm";
+const enabledClassName = `${buttonClassName} bg-night text-white dark:bg-white dark:text-night ${pressableClassName}`;
+
+type ConnectGithubProps = { login: string; onNavigate: () => void };
 
 function GithubMark() {
   return (
     <svg
       viewBox="0 0 16 16"
-      className="size-5 shrink-0"
+      className="size-4 shrink-0 max-[359px]:hidden"
       fill="currentColor"
       aria-hidden="true"
     >
@@ -18,82 +23,58 @@ function GithubMark() {
   );
 }
 
-function statusMessage(githubApp: UseQueryResult<GithubApp>): string {
-  if (githubApp.isError) {
-    return "Couldn't load the GitHub connect link";
-  }
-  if (githubApp.isPending) {
-    return "";
-  }
-  return "Your total and per-agent breakdown become public. Repo names, commits and code are never stored or shown.";
-}
-
-export function ConnectGithub() {
-  const githubApp = useGithubApp();
-  const statusId = useId();
-  const buttonClassName = `flex items-center gap-2 rounded-full px-5 py-2.5 font-medium text-sm ${glassClassName}`;
+function SearchFirstLink({ onNavigate }: { onNavigate: () => void }) {
   return (
-    <div className="flex max-w-sm flex-col items-center gap-2 text-center">
-      {githubApp.data ? (
-        <a
-          href={githubApp.data.installUrl}
-          aria-describedby={statusId}
-          className={`${buttonClassName} text-night dark:text-white ${pressableClassName}`}
-        >
-          <GithubMark />
-          {connectLabel}
-        </a>
-      ) : (
-        <button
-          type="button"
-          disabled
-          aria-describedby={statusId}
-          className={`${buttonClassName} cursor-not-allowed text-night/40 dark:text-white/40`}
-        >
-          <GithubMark />
-          {connectLabel}
-        </button>
-      )}
-      <p
-        id={statusId}
-        role={githubApp.isError ? "alert" : "status"}
-        className="text-night/60 text-xs dark:text-white/60"
-      >
-        {statusMessage(githubApp)}
-      </p>
-    </div>
+    <Link
+      to={searchFocusPath}
+      onClick={onNavigate}
+      aria-label="Connect GitHub: search your username first"
+      className={enabledClassName}
+    >
+      <GithubMark />
+      Connect
+    </Link>
   );
 }
 
-export function ConnectGithubMenu() {
-  const [isOpen, setIsOpen] = useState(false);
-  const panelId = useId();
-  return (
-    <div>
+/** Pre: login is not empty. */
+function ProfileConnectLink({ login, onNavigate }: ConnectGithubProps) {
+  const [searchParams] = useSearchParams();
+  const profileTokens = useProfileTokens(login, readConnectedKey(searchParams));
+  if (profileTokens.isPending) {
+    return (
       <button
         type="button"
-        aria-label="GitHub"
-        aria-expanded={isOpen}
-        aria-controls={panelId}
-        onClick={() => setIsOpen(!isOpen)}
-        className="flex size-10 items-center justify-center rounded-full text-night/80 hover:bg-night/15 hover:text-night sm:size-9 dark:text-white/80 dark:hover:bg-white/15 dark:hover:text-white"
+        disabled
+        aria-label="Connect GitHub"
+        className={`${buttonClassName} cursor-not-allowed bg-night/40 text-white dark:bg-white/40 dark:text-night`}
       >
         <GithubMark />
+        Connect
       </button>
-      {isOpen && (
-        <div
-          id={panelId}
-          className="absolute top-full right-0 mt-3 w-80 max-w-full rounded-3xl border border-white/90 bg-white/95 p-4 shadow-[0_24px_60px_-28px_rgb(15_23_42/0.4)] backdrop-blur-xl dark:border-white/20 dark:bg-night/95"
-        >
-          <ConnectGithub />
-          <a
-            href="https://github.com/Lluc24/GitToken"
-            className="mt-3 block border-night/10 border-t pt-3 text-center text-night/70 text-sm hover:text-night dark:border-white/10 dark:text-white/70 dark:hover:text-white"
-          >
-            GitToken's source on GitHub
-          </a>
-        </div>
-      )}
-    </div>
+    );
+  }
+  if (profileTokens.isError) {
+    return <SearchFirstLink onNavigate={onNavigate} />;
+  }
+  const connectLabel = `Connect GitHub as ${profileTokens.data.login}`;
+  return (
+    <a
+      href={profileTokens.data.installUrl}
+      aria-label={connectLabel}
+      title={connectLabel}
+      className={enabledClassName}
+    >
+      <GithubMark />
+      Connect
+    </a>
+  );
+}
+
+export function ConnectGithub({ login, onNavigate }: ConnectGithubProps) {
+  return login === "" ? (
+    <SearchFirstLink onNavigate={onNavigate} />
+  ) : (
+    <ProfileConnectLink login={login} onNavigate={onNavigate} />
   );
 }
