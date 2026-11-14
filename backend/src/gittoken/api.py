@@ -178,7 +178,9 @@ async def _finish_lookup(lookup: asyncio.Task[GithubProfile]) -> None:
 
 
 def _share_running_lookups(
-    lookup_profile_by_login: Callable[[VerifiedGithubUsername], Coroutine[object, object, GithubProfile]],
+    lookup_profile_by_login: Callable[
+        [VerifiedGithubUsername], Coroutine[object, object, GithubProfile]
+    ],
 ) -> Callable[[VerifiedGithubUsername], asyncio.Task[GithubProfile]]:
     """Post: a function returning the running lookup of a login, starting one when none is
     running, so a page showing two badges scans once."""
