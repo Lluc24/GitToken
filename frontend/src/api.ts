@@ -122,20 +122,15 @@ const githubAppResponse = z.object({
   install_url: z.url({ protocol: /^https$/, hostname: /^github\.com$/ }),
 });
 
-export type GithubApp =
-  | { isConfigured: true; installUrl: string }
-  | { isConfigured: false };
+export type GithubApp = { installUrl: string };
 
 async function fetchGithubApp(): Promise<GithubApp> {
   const response = await fetch("/v1/github-app");
-  if (response.status === 503) {
-    return { isConfigured: false };
-  }
   if (!response.ok) {
     throw new Error(`The GitToken API answered ${response.status}`);
   }
   const body = await parseBody(response, githubAppResponse, "The GitToken API");
-  return { isConfigured: true, installUrl: body.install_url };
+  return { installUrl: body.install_url };
 }
 
 export function useGithubApp() {

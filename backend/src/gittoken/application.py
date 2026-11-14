@@ -53,11 +53,11 @@ _MINIMUM_RESCAN_INTERVAL = timedelta(minutes=1)
 async def lookup_profile(
     github_client: GithubApiClient,
     supabase_client: SupabaseClient,
-    github_app: GithubApp | None,
+    github_app: GithubApp,
     login: VerifiedGithubUsername,
 ) -> GithubProfile:
     """Post: the cached profile, or a fresh scan that also covers the private repositories the
-    account granted when github_app is configured."""
+    account granted."""
     started_at = perf_counter()
     now = datetime.now(UTC)
     try:
@@ -71,13 +71,12 @@ async def lookup_profile(
                 "github.scan", record_exception=False, set_status_on_exception=False
             ):
                 profile = await fetch_github_profile(github_client, login)
-                if github_app is not None:
-                    profile = replace(
-                        profile,
-                        private_repositories=await fetch_private_repositories(
-                            github_client, github_app, profile, now
-                        ),
-                    )
+                profile = replace(
+                    profile,
+                    private_repositories=await fetch_private_repositories(
+                        github_client, github_app, profile, now
+                    ),
+                )
             with tracer.start_as_current_span(
                 "profile.persist", record_exception=False, set_status_on_exception=False
             ):

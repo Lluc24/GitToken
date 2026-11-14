@@ -36,7 +36,7 @@ The same data is drawn as SVG cards from Jinja templates, for the site and for R
 | `GET /v1/leaderboard` | Profiles scanned in the last day |
 | `POST /v1/events/profile-search` | Sent by the site on each search; posts the login to Slack |
 
-Each search submitted on the site posts its login to the Slack webhook in `SLACK_ACTIVITY_WEBHOOK_URL` (unset: nothing is sent), best effort within two seconds.
+Each search submitted on the site posts its login to the Slack webhook in `SLACK_ACTIVITY_WEBHOOK_URL`, best effort within two seconds.
 
 Profiles and cards are cached by the CDN for a day, matching the Supabase cache. GitHub's image proxy gives up after a few seconds, so a card whose first scan takes longer answers with a "Scanning" placeholder for a minute while the scan finishes. Badge errors (unknown user, GitHub down) are drawn as a card with status 200 and cached for ten minutes, so a README never shows a broken image.
 

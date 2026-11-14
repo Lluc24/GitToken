@@ -20,15 +20,12 @@ function GithubMark() {
 
 function statusMessage(githubApp: UseQueryResult<GithubApp>): string {
   if (githubApp.isError) {
-    return "Couldn't check whether private repo scanning is available";
+    return "Couldn't load the GitHub connect link";
   }
   if (githubApp.isPending) {
     return "";
   }
-  if (githubApp.data.isConfigured) {
-    return "Your total and per-agent breakdown become public. Repo names, commits and code are never stored or shown.";
-  }
-  return "Private repo scanning isn't available yet";
+  return "Your total and per-agent breakdown become public. Repo names, commits and code are never stored or shown.";
 }
 
 export function ConnectGithub() {
@@ -37,7 +34,7 @@ export function ConnectGithub() {
   const buttonClassName = `flex items-center gap-2 rounded-full px-5 py-2.5 font-medium text-sm ${glassClassName}`;
   return (
     <div className="flex max-w-sm flex-col items-center gap-2 text-center">
-      {githubApp.data?.isConfigured ? (
+      {githubApp.data ? (
         <a
           href={githubApp.data.installUrl}
           aria-describedby={statusId}

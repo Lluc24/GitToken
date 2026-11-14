@@ -4,7 +4,7 @@ import sys
 from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine
 from contextlib import asynccontextmanager
 from functools import partial
-from typing import Annotated, Self
+from typing import Annotated
 from uuid import uuid4
 
 import sentry_sdk
@@ -28,7 +28,6 @@ from pydantic import (
     PositiveInt,
     SecretStr,
     field_validator,
-    model_validator,
 )
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sentry_sdk.integrations.loguru import LoguruIntegration
@@ -101,62 +100,33 @@ class ApiSettings(BaseSettings):
     supabase_secret_key: SecretStr
     otel_exporter_otlp_endpoint: str = ""
     sentry_dsn: SecretStr = SecretStr("")
-    github_app_id: PositiveInt | None = None
-    github_app_private_key: SecretStr | None = None
-    github_webhook_secret: SecretStr | None = None
-    github_app_slug: str | None = Field(default=None, pattern="^[a-z0-9][a-z0-9-]*$")
-    github_app_client_id: str | None = Field(default=None, min_length=1)
-    github_app_client_secret: SecretStr | None = None
-    slack_activity_webhook_url: SecretStr | None = None
+    github_app_id: PositiveInt
+    github_app_private_key: SecretStr
+    github_webhook_secret: SecretStr
+    github_app_slug: str = Field(pattern="^[a-z0-9][a-z0-9-]*$")
+    github_app_client_id: str = Field(min_length=1)
+    github_app_client_secret: SecretStr
+    slack_activity_webhook_url: SecretStr
 
     @property
-    def github_app(self) -> GithubApp | None:
-        """Post: the GitHub App when all six of its settings are set, else None."""
-        if (
-            self.github_app_id is not None
-            and self.github_app_private_key is not None
-            and self.github_webhook_secret is not None
-            and self.github_app_slug is not None
-            and self.github_app_client_id is not None
-            and self.github_app_client_secret is not None
-        ):
-            return GithubApp(
-                self.github_app_id,
-                load_github_app_private_key(self.github_app_private_key),
-                self.github_webhook_secret,
-                self.github_app_slug,
-                self.github_app_client_id,
-                self.github_app_client_secret,
-            )
-        return None
+    def github_app(self) -> GithubApp:
+        return GithubApp(
+            self.github_app_id,
+            load_github_app_private_key(self.github_app_private_key),
+            self.github_webhook_secret,
+            self.github_app_slug,
+            self.github_app_client_id,
+            self.github_app_client_secret,
+        )
 
     @field_validator("slack_activity_webhook_url")
     @classmethod
-    def require_slack_webhook_url(cls, webhook_url: SecretStr | None) -> SecretStr | None:
-        if webhook_url is not None and not webhook_url.get_secret_value().startswith(
-            _SLACK_WEBHOOK_URL_PREFIX
-        ):
+    def require_slack_webhook_url(cls, webhook_url: SecretStr) -> SecretStr:
+        if not webhook_url.get_secret_value().startswith(_SLACK_WEBHOOK_URL_PREFIX):
             raise ValueError(
                 f"SLACK_ACTIVITY_WEBHOOK_URL must start with {_SLACK_WEBHOOK_URL_PREFIX}"
             )
         return webhook_url
-
-    @model_validator(mode="after")
-    def require_all_or_no_github_app_settings(self) -> Self:
-        github_app_settings = {
-            "GITHUB_APP_ID": self.github_app_id,
-            "GITHUB_APP_PRIVATE_KEY": self.github_app_private_key,
-            "GITHUB_WEBHOOK_SECRET": self.github_webhook_secret,
-            "GITHUB_APP_SLUG": self.github_app_slug,
-            "GITHUB_APP_CLIENT_ID": self.github_app_client_id,
-            "GITHUB_APP_CLIENT_SECRET": self.github_app_client_secret,
-        }
-        missing_names = [name for name, value in github_app_settings.items() if value is None]
-        if 0 < len(missing_names) < len(github_app_settings):
-            raise ValueError(
-                f"Set all GitHub App settings or none; missing {', '.join(missing_names)}"
-            )
-        return self
 
 
 class GithubAppResponse(BaseModel):
@@ -251,21 +221,15 @@ async def _badge_response(
 
 def _add_github_app_routes(
     app: FastAPI,
-    github_app: GithubApp | None,
+    github_app: GithubApp,
     github_client: GithubApiClient,
     oauth_client: GithubOauthClient,
     supabase_client: SupabaseClient,
 ) -> None:
     @app.get("/v1/github-app")
     def get_github_app() -> GithubAppResponse:
-        if github_app is not None:
-            return GithubAppResponse(
-                install_url=f"https://github.com/apps/{github_app.slug}/installations/new"
-            )
-        raise HTTPException(
-            status.HTTP_503_SERVICE_UNAVAILABLE,
-            "GitHub App is not configured",
-            headers={"Cache-Control": "no-store"},
+        return GithubAppResponse(
+            install_url=f"https://github.com/apps/{github_app.slug}/installations/new"
         )
 
     @app.get("/v1/github-app/setup")
@@ -276,47 +240,41 @@ def _add_github_app_routes(
         """GitHub sends the browser here after an install or a repository change, with code when
         the user authorized the app; without it nothing is changed."""
         no_store_headers = {"Cache-Control": "no-store"}
-        if github_app is not None:
-            try:
-                login = (
-                    await finish_authorized_installation(
-                        github_client,
-                        oauth_client,
-                        supabase_client,
-                        github_app,
-                        InstallationAuthorization(installation_id, code),
-                    )
-                    if code is not None
-                    else await find_installation_login(github_client, github_app, installation_id)
+        try:
+            login = (
+                await finish_authorized_installation(
+                    github_client,
+                    oauth_client,
+                    supabase_client,
+                    github_app,
+                    InstallationAuthorization(installation_id, code),
                 )
-            except InvalidAuthorizationCodeError as error:
-                raise HTTPException(
-                    status.HTTP_400_BAD_REQUEST, str(error), headers=no_store_headers
-                ) from error
-            except OrganizationInstallationError as error:
-                raise HTTPException(
-                    status.HTTP_422_UNPROCESSABLE_CONTENT, str(error), headers=no_store_headers
-                ) from error
-            except InstallationNotFoundError as error:
-                raise HTTPException(
-                    status.HTTP_404_NOT_FOUND, str(error), headers=no_store_headers
-                ) from error
-            except (GithubRequestError, ProfileStoreError) as error:
-                raise HTTPException(
-                    status.HTTP_502_BAD_GATEWAY,
-                    "GitHub App setup unavailable",
-                    headers=no_store_headers,
-                ) from error
-            # A fresh key for the profile page to pass on to its API requests, past the CDN's
-            # copies from before the install.
-            return RedirectResponse(
-                f"/{login}?connected={uuid4().hex[:8]}",
-                status.HTTP_303_SEE_OTHER,
-                headers=no_store_headers,
+                if code is not None
+                else await find_installation_login(github_client, github_app, installation_id)
             )
-        raise HTTPException(
-            status.HTTP_503_SERVICE_UNAVAILABLE,
-            "GitHub App is not configured",
+        except InvalidAuthorizationCodeError as error:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST, str(error), headers=no_store_headers
+            ) from error
+        except OrganizationInstallationError as error:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_CONTENT, str(error), headers=no_store_headers
+            ) from error
+        except InstallationNotFoundError as error:
+            raise HTTPException(
+                status.HTTP_404_NOT_FOUND, str(error), headers=no_store_headers
+            ) from error
+        except (GithubRequestError, ProfileStoreError) as error:
+            raise HTTPException(
+                status.HTTP_502_BAD_GATEWAY,
+                "GitHub App setup unavailable",
+                headers=no_store_headers,
+            ) from error
+        # A fresh key for the profile page to pass on to its API requests, past the CDN's
+        # copies from before the install.
+        return RedirectResponse(
+            f"/{login}?connected={uuid4().hex[:8]}",
+            status.HTTP_303_SEE_OTHER,
             headers=no_store_headers,
         )
 
@@ -326,35 +284,31 @@ def _add_github_app_routes(
         x_github_event: Annotated[str, Header()],
         x_hub_signature_256: Annotated[str, Header()],
     ) -> None:
-        if github_app is not None:
+        try:
+            withdrawal = parse_webhook(
+                github_app.webhook_secret,
+                x_github_event,
+                x_hub_signature_256,
+                await request.body(),
+            )
+        except InvalidWebhookError as error:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, str(error)) from error
+        if withdrawal is not None:
             try:
-                withdrawal = parse_webhook(
-                    github_app.webhook_secret,
-                    x_github_event,
-                    x_hub_signature_256,
-                    await request.body(),
-                )
-            except InvalidWebhookError as error:
-                raise HTTPException(status.HTTP_400_BAD_REQUEST, str(error)) from error
-            if withdrawal is not None:
-                try:
-                    await withdraw_consent(supabase_client, withdrawal)
-                except ProfileStoreError as error:
-                    raise HTTPException(
-                        status.HTTP_502_BAD_GATEWAY, "Private repositories could not be forgotten"
-                    ) from error
-            return
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "GitHub App is not configured")
+                await withdraw_consent(supabase_client, withdrawal)
+            except ProfileStoreError as error:
+                raise HTTPException(
+                    status.HTTP_502_BAD_GATEWAY, "Private repositories could not be forgotten"
+                ) from error
 
 
-def _add_profile_search_route(app: FastAPI, slack_client: SlackActivityClient | None) -> None:
+def _add_profile_search_route(app: FastAPI, slack_client: SlackActivityClient) -> None:
     @app.post("/v1/events/profile-search", status_code=status.HTTP_202_ACCEPTED)
     async def receive_profile_search(event: ProfileSearchEvent) -> None:
         """The site sends this when a visitor submits a search. The Slack message is sent before
         answering, within its two-second timeout, as a serverless function may be frozen once it
         has answered; a failed send still answers 202."""
-        if slack_client is not None:
-            await report_profile_search(slack_client, event.login)
+        await report_profile_search(slack_client, event.login)
 
 
 def create_app() -> FastAPI:
@@ -383,11 +337,7 @@ def create_app() -> FastAPI:
     avatar_client = create_github_avatar_client()
     oauth_client = create_github_oauth_client()
     supabase_client = create_supabase_client(settings.supabase_url, settings.supabase_secret_key)
-    slack_client = (
-        create_slack_activity_client(settings.slack_activity_webhook_url)
-        if settings.slack_activity_webhook_url is not None
-        else None
-    )
+    slack_client = create_slack_activity_client(settings.slack_activity_webhook_url)
 
     @asynccontextmanager
     async def close_clients_on_shutdown(_: FastAPI) -> AsyncIterator[None]:
@@ -396,8 +346,7 @@ def create_app() -> FastAPI:
         await avatar_client.aclose()
         await oauth_client.aclose()
         await supabase_client.aclose()
-        if slack_client is not None:
-            await slack_client.aclose()
+        await slack_client.aclose()
 
     app = FastAPI(title="GitToken", lifespan=close_clients_on_shutdown)
     lookup_profile_by_login = partial(lookup_profile, github_client, supabase_client, github_app)
