@@ -10,13 +10,13 @@ import {
 } from "react-router-dom";
 import { useProfileTokens } from "./api";
 import { BadgesPage } from "./BadgesPage";
-import { profileCardPath, withConnectedKey } from "./badges";
+import { withConnectedKey } from "./badges";
 import { ConnectGithub, ConnectGithubMenu } from "./ConnectGithub";
 import { formatTokens } from "./format";
 import { glassClassName, pressableClassName } from "./glass";
 import { Leaderboard } from "./Leaderboard";
 import { LoginForm } from "./LoginForm";
-import { badgesPagePath, profilePath } from "./paths";
+import { badgesPagePath, profileCardPath, profilePath } from "./paths";
 import { ShareCard } from "./ShareCard";
 import { ThemeToggle } from "./ThemeToggle";
 import { useTheme } from "./theme";
