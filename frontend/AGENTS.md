@@ -1,4 +1,4 @@
-# Frontend (owner: Lluc): React, Vite, TypeScript strict, pnpm, TanStack Query, Tailwind.
+# Frontend: React, Vite, TypeScript strict, pnpm, TanStack Query, Tailwind.
 Start flat in src/. Split into folders, or add a layer, only when concrete code needs it. Root AGENTS.md rules apply to TypeScript too.
 - Pure types and functions (token formatting) stay free of React and fetch.
 - api.ts does the I/O: the client for the backend /v1 routes, parsed with zod. Components never call fetch; they use TanStack Query hooks over it.

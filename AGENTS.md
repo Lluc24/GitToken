@@ -1,4 +1,4 @@
-# GitToken monorepo (backend, frontend, infra, supabase): estimates the LLM tokens developers spent through coding agents, from their public GitHub commits.
+# GitToken monorepo (backend, frontend, supabase): estimates the LLM tokens developers spent through coding agents, from their GitHub commits.
 Read the AGENTS.md of every directory you touch. Full rationale, only if a rule is unclear: docs/CODING_RULES.md.
 - Validate untrusted input once, at the boundary, into typed domain values. Interior code trusts its types: no None/isinstance/hasattr checks, no impossible branches.
 - Make invalid states unrepresentable: frozen dataclasses, enums, branded types. No raw dicts/JSON past the boundary, no Optional after validation.

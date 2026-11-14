@@ -1,5 +1,5 @@
 [tool.uv.workspace]
-members = ["backend", "infra"]
+members = ["backend"]
 
 [dependency-groups]
 dev = ["ruff>=0.17.4", "mypy>=2.4.1"]

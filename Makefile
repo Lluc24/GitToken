@@ -9,7 +9,6 @@ check:
 	uv run ruff format --check
 	uv run ruff check
 	uv run mypy backend/src
-	uv run mypy infra
 	cd frontend && pnpm check
 	cd frontend && pnpm build
 
