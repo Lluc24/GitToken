@@ -1,6 +1,7 @@
 import json
 from collections.abc import Mapping
 from datetime import datetime, timedelta
+from itertools import batched
 from types import MappingProxyType
 from typing import NewType
 
@@ -29,6 +30,8 @@ from gittoken.domain import (
 
 _TIMEOUT_SECONDS = 10
 _USER_TTL = timedelta(days=1)
+# A revoke event can list every repository of an installation; 50 keeps each URL near 4 KB.
+_REPOSITORY_IDS_PER_REQUEST = 50
 
 SupabaseClient = NewType("SupabaseClient", httpx.AsyncClient)
 
@@ -228,14 +231,13 @@ async def fetch_profiles_granting(
     """Post: the saved profile, whatever its age, of each account that granted any of
     repository_ids, once per account, with the login as stored."""
     profile_by_github_id: dict[GithubUserId, GithubProfile] = {}
-    for repository_id in repository_ids:
+    for repository_ids_batch in batched(repository_ids, _REPOSITORY_IDS_PER_REQUEST, strict=False):
+        granted_filters = ",".join(
+            f"granted_repositories.cs.{json.dumps([{'repository_id': repository_id}])}"
+            for repository_id in repository_ids_batch
+        )
         request = supabase_client.build_request(
-            "GET",
-            "/users",
-            params={
-                "select": _USER_COLUMNS,
-                "granted_repositories": f"cs.{json.dumps([{'repository_id': repository_id}])}",
-            },
+            "GET", "/users", params={"select": _USER_COLUMNS, "or": f"({granted_filters})"}
         )
         for user in _parse_rows(await _send(supabase_client, request), _USER_ROWS):
             profile_by_github_id[GithubUserId(user.github_id)] = _profile_from_user(
