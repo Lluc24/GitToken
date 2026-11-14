@@ -10,6 +10,10 @@ type SnippetFormat = "README" | "Markdown" | "URL";
 
 const snippetFormats: SnippetFormat[] = ["README", "Markdown", "URL"];
 
+const copiedLabelDurationMilliseconds = 2000;
+
+type CopyResult = "copied" | "failed";
+
 // README follows the reader's GitHub theme through <picture>; the others use the site's theme.
 function snippet(
   format: SnippetFormat,
@@ -70,12 +74,34 @@ function SegmentedControl<Option extends string>({
 function BadgeSection({ login, badge }: { login: string; badge: Badge }) {
   const theme = useTheme();
   const [format, setFormat] = useState<SnippetFormat>("README");
-  const [copiedFormat, setCopiedFormat] = useState<SnippetFormat | null>(null);
+  const [copyResult, setCopyResult] = useState<CopyResult | null>(null);
   const text = snippet(format, login, badge, theme);
+  const isCopied = copyResult === "copied";
+
+  useEffect(() => {
+    if (isCopied) {
+      const timeoutId = setTimeout(
+        () => setCopyResult(null),
+        copiedLabelDurationMilliseconds,
+      );
+      return () => clearTimeout(timeoutId);
+    }
+    return undefined;
+  }, [isCopied]);
+
+  function selectFormat(selectedFormat: SnippetFormat) {
+    setFormat(selectedFormat);
+    setCopyResult(null);
+  }
 
   async function copySnippet() {
-    await navigator.clipboard.writeText(text);
-    setCopiedFormat(format);
+    setCopyResult(null);
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopyResult("copied");
+    } catch {
+      setCopyResult("failed");
+    }
   }
 
   return (
@@ -105,7 +131,7 @@ function BadgeSection({ login, badge }: { login: string; badge: Badge }) {
           label="Snippet format"
           options={snippetFormats}
           selected={format}
-          onSelect={setFormat}
+          onSelect={selectFormat}
         />
       </div>
       <div className="mt-2 flex items-center gap-2 rounded-2xl bg-night/5 dark:bg-black/40 py-2 pr-2 pl-4 shadow-[inset_0_1px_0_rgb(255_255_255/0.08)]">
@@ -117,12 +143,20 @@ function BadgeSection({ login, badge }: { login: string; badge: Badge }) {
           onClick={copySnippet}
           className={`shrink-0 rounded-full bg-gradient-to-br from-cyan-300 via-violet-400 to-fuchsia-400 px-4 py-2 font-semibold sm:py-1.5 text-night text-sm ${pressableClassName}`}
         >
-          {copiedFormat === format ? "Copied ✓" : "Copy"}
+          {isCopied ? "Copied ✓" : "Copy"}
         </button>
       </div>
       <p role="status" className="sr-only">
-        {copiedFormat === format ? `${format} snippet copied` : ""}
+        {isCopied ? `${format} snippet copied` : ""}
       </p>
+      {copyResult === "failed" && (
+        <p
+          role="alert"
+          className="mt-2 px-1 text-rose-700 text-sm dark:text-rose-200"
+        >
+          Couldn't copy. Select the snippet and copy it yourself.
+        </p>
+      )}
     </section>
   );
 }
