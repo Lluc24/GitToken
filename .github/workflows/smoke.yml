@@ -1,0 +1,23 @@
+name: Smoke
+
+on:
+  # Vercel sends this once the production domain points at a new deployment.
+  repository_dispatch:
+    types: [vercel.deployment.promoted]
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  production:
+    runs-on: ubuntu-latest
+    env:
+      SITE_URL: https://gittoken.vercel.app
+      LOGIN: ${{ github.repository_owner }}
+      # A fresh query string per run, so the CDN passes the lookup to the app instead of answering from its copy.
+      RUN_KEY: ${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - name: The app starts with its settings
+        run: curl --fail-with-body --silent --show-error --retry 3 --retry-delay 10 --max-time 30 "$SITE_URL/v1/agents"
+      - name: A profile lookup succeeds
+        run: curl --fail-with-body --silent --show-error --max-time 120 "$SITE_URL/v1/users/$LOGIN?smoke=$RUN_KEY"
