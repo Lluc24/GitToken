@@ -177,35 +177,32 @@ async def _finish_lookup(lookup: asyncio.Task[GithubProfile]) -> None:
     await lookup
 
 
-# Badge requests for the same login share one lookup, so a page showing two badges scans once.
-_badge_lookups: dict[str, asyncio.Task[GithubProfile]] = {}
+def _share_running_lookups(
+    lookup_profile_by_login: Callable[[VerifiedGithubUsername], Coroutine[object, object, GithubProfile]],
+) -> Callable[[VerifiedGithubUsername], asyncio.Task[GithubProfile]]:
+    """Post: a function returning the running lookup of a login, starting one when none is
+    running, so a page showing two badges scans once."""
+    running_lookups: dict[VerifiedGithubUsername, asyncio.Task[GithubProfile]] = {}
 
+    def start_or_join_lookup(login: VerifiedGithubUsername) -> asyncio.Task[GithubProfile]:
+        if login not in running_lookups:
+            running_lookups[login] = asyncio.create_task(lookup_profile_by_login(login))
+            running_lookups[login].add_done_callback(lambda _: running_lookups.pop(login))
+        return running_lookups[login]
 
-async def _lookup_within_badge_wait(
-    login: str,
-    lookup_profile: Callable[[], Coroutine[object, object, GithubProfile]],
-    background_tasks: BackgroundTasks,
-) -> asyncio.Task[GithubProfile]:
-    """Post: a finished lookup, or one that keeps running after the response is sent."""
-    if login not in _badge_lookups:
-        _badge_lookups[login] = asyncio.create_task(lookup_profile())
-        _badge_lookups[login].add_done_callback(lambda _: _badge_lookups.pop(login))
-    lookup = _badge_lookups[login]
-    await asyncio.wait({lookup}, timeout=_BADGE_LOOKUP_WAIT_SECONDS)
-    if not lookup.done():
-        background_tasks.add_task(_finish_lookup, lookup)
-    return lookup
+    return start_or_join_lookup
 
 
 async def _badge_response(
     login: VerifiedGithubUsername,
     theme: Theme,
-    lookup_profile: Callable[[], Coroutine[object, object, GithubProfile]],
+    lookup: asyncio.Task[GithubProfile],
     background_tasks: BackgroundTasks,
     render_card: Callable[[GithubProfile], Awaitable[str]],
 ) -> Response:
-    """Post: the card, an error card, or a scanning placeholder; always an SVG a README can show."""
-    lookup = await _lookup_within_badge_wait(login, lookup_profile, background_tasks)
+    """Post: the card, an error card, or a scanning placeholder; always an SVG a README can show.
+    A lookup still running after the badge wait is finished once the response is sent."""
+    await asyncio.wait({lookup}, timeout=_BADGE_LOOKUP_WAIT_SECONDS)
     if lookup.done():
         try:
             svg = await render_card(lookup.result())
@@ -216,6 +213,7 @@ async def _badge_response(
         except ProfileStoreError:
             return _badge_error_response(login, "GitToken is unavailable, retrying soon", theme)
         return _svg_response(svg, _DAILY_CACHE_CONTROL)
+    background_tasks.add_task(_finish_lookup, lookup)
     return _svg_response(render_scanning_card(login, theme), _SCANNING_CACHE_CONTROL)
 
 
@@ -350,6 +348,7 @@ def create_app() -> FastAPI:
 
     app = FastAPI(title="GitToken", lifespan=close_clients_on_shutdown)
     lookup_profile_by_login = partial(lookup_profile, github_client, supabase_client, github_app)
+    start_or_join_badge_lookup = _share_running_lookups(lookup_profile_by_login)
 
     @app.get("/v1/users/{login}")
     async def get_user_tokens(
@@ -391,7 +390,7 @@ def create_app() -> FastAPI:
         return await _badge_response(
             login,
             theme,
-            lambda: lookup_profile_by_login(login),
+            start_or_join_badge_lookup(login),
             background_tasks,
             render_card,
         )
@@ -409,7 +408,7 @@ def create_app() -> FastAPI:
         return await _badge_response(
             login,
             theme,
-            lambda: lookup_profile_by_login(login),
+            start_or_join_badge_lookup(login),
             background_tasks,
             render_card,
         )
