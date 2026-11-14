@@ -177,22 +177,29 @@ async def _finish_lookup(lookup: asyncio.Task[GithubProfile]) -> None:
     await lookup
 
 
-def _share_running_lookups(
-    lookup_profile_by_login: Callable[
-        [VerifiedGithubUsername], Coroutine[object, object, GithubProfile]
-    ],
-) -> Callable[[VerifiedGithubUsername], asyncio.Task[GithubProfile]]:
-    """Post: a function returning the running lookup of a login, starting one when none is
-    running, so a page showing two badges scans once."""
-    running_lookups: dict[VerifiedGithubUsername, asyncio.Task[GithubProfile]] = {}
+class _RunningBadgeLookups:
+    """Invariant: at most one running lookup per login, so a page showing two badges scans once."""
 
-    def start_or_join_lookup(login: VerifiedGithubUsername) -> asyncio.Task[GithubProfile]:
-        if login not in running_lookups:
-            running_lookups[login] = asyncio.create_task(lookup_profile_by_login(login))
-            running_lookups[login].add_done_callback(lambda _: running_lookups.pop(login))
-        return running_lookups[login]
+    def __init__(
+        self,
+        lookup_profile_by_login: Callable[
+            [VerifiedGithubUsername], Coroutine[object, object, GithubProfile]
+        ],
+    ) -> None:
+        self._lookup_profile_by_login = lookup_profile_by_login
+        self._running_lookup_by_login: dict[
+            VerifiedGithubUsername, asyncio.Task[GithubProfile]
+        ] = {}
 
-    return start_or_join_lookup
+    def start_or_join(self, login: VerifiedGithubUsername) -> asyncio.Task[GithubProfile]:
+        if login not in self._running_lookup_by_login:
+            self._running_lookup_by_login[login] = asyncio.create_task(
+                self._lookup_profile_by_login(login)
+            )
+            self._running_lookup_by_login[login].add_done_callback(
+                lambda _: self._running_lookup_by_login.pop(login)
+            )
+        return self._running_lookup_by_login[login]
 
 
 async def _badge_response(
@@ -350,7 +357,7 @@ def create_app() -> FastAPI:
 
     app = FastAPI(title="GitToken", lifespan=close_clients_on_shutdown)
     lookup_profile_by_login = partial(lookup_profile, github_client, supabase_client, github_app)
-    start_or_join_badge_lookup = _share_running_lookups(lookup_profile_by_login)
+    running_badge_lookups = _RunningBadgeLookups(lookup_profile_by_login)
 
     @app.get("/v1/users/{login}")
     async def get_user_tokens(
@@ -392,7 +399,7 @@ def create_app() -> FastAPI:
         return await _badge_response(
             login,
             theme,
-            start_or_join_badge_lookup(login),
+            running_badge_lookups.start_or_join(login),
             background_tasks,
             render_card,
         )
@@ -410,7 +417,7 @@ def create_app() -> FastAPI:
         return await _badge_response(
             login,
             theme,
-            start_or_join_badge_lookup(login),
+            running_badge_lookups.start_or_join(login),
             background_tasks,
             render_card,
         )
