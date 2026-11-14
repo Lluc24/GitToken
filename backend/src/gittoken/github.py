@@ -82,6 +82,12 @@ class GithubApp:
     client_secret: SecretStr
 
 
+def github_app_install_url(github_app: GithubApp, github_id: GithubUserId) -> str:
+    """Post: the page that installs the app on that account, skipping GitHub's account picker.
+    GitHub answers 404 to anyone who cannot install on that account."""
+    return f"https://github.com/apps/{github_app.slug}/installations/new/permissions?target_id={github_id}"
+
+
 def load_github_app_private_key(private_key_pem: SecretStr) -> RSAPrivateKey:
     """Post: the RSA key, or ValueError naming what the PEM holds instead."""
     private_key = load_pem_private_key(private_key_pem.get_secret_value().encode(), password=None)

@@ -74,6 +74,7 @@ from gittoken.github import (
     create_github_api_client,
     create_github_avatar_client,
     create_github_oauth_client,
+    github_app_install_url,
     load_github_app_private_key,
     parse_webhook,
 )
@@ -128,16 +129,13 @@ class ApiSettings(BaseSettings):
         return webhook_url
 
 
-class GithubAppResponse(BaseModel):
-    install_url: str
-
-
 class ProfileTokensResponse(BaseModel):
     login: str
     total_tokens: int
     rarity: Rarity
     tokens_by_agent: dict[Agent, int]
     includes_private_repositories: bool
+    install_url: str
 
 
 class ProfileSearchEvent(BaseModel):
@@ -234,12 +232,6 @@ def _add_github_app_routes(
     oauth_client: GithubOauthClient,
     supabase_client: SupabaseClient,
 ) -> None:
-    @app.get("/v1/github-app")
-    def get_github_app() -> GithubAppResponse:
-        return GithubAppResponse(
-            install_url=f"https://github.com/apps/{github_app.slug}/installations/new"
-        )
-
     @app.get("/v1/github-app/setup")
     async def finish_github_app_setup(
         installation_id: Annotated[InstallationId, Query(gt=0)],
@@ -383,6 +375,7 @@ def create_app() -> FastAPI:
             rarity=profile.rarity,
             tokens_by_agent=profile.tokens_by_agent,
             includes_private_repositories=profile.includes_private_repositories,
+            install_url=github_app_install_url(github_app, profile.github_id),
         )
 
     _add_profile_search_route(app, slack_client)

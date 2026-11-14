@@ -31,6 +31,7 @@ const profileTokensResponse = z.object({
   rarity,
   tokens_by_agent: z.record(z.string(), z.number()),
   includes_private_repositories: z.boolean(),
+  install_url: z.url({ protocol: /^https$/, hostname: /^github\.com$/ }),
 });
 
 export type ProfileTokens = {
@@ -39,6 +40,7 @@ export type ProfileTokens = {
   rarity: Rarity;
   tokensByAgent: Record<string, number>;
   includesPrivateRepositories: boolean;
+  installUrl: string;
 };
 
 async function fetchProfileTokens(
@@ -68,6 +70,7 @@ async function fetchProfileTokens(
     rarity: body.rarity,
     tokensByAgent: body.tokens_by_agent,
     includesPrivateRepositories: body.includes_private_repositories,
+    installUrl: body.install_url,
   };
 }
 
@@ -117,31 +120,6 @@ export function useLeaderboard() {
     retry: false,
   });
 }
-
-const githubAppResponse = z.object({
-  install_url: z.url({ protocol: /^https$/, hostname: /^github\.com$/ }),
-});
-
-export type GithubApp = { installUrl: string };
-
-async function fetchGithubApp(): Promise<GithubApp> {
-  const response = await fetch("/v1/github-app");
-  if (!response.ok) {
-    throw new Error(`The GitToken API answered ${response.status}`);
-  }
-  const body = await parseBody(response, githubAppResponse, "The GitToken API");
-  return { installUrl: body.install_url };
-}
-
-export function useGithubApp() {
-  return useQuery({
-    queryKey: ["github-app"],
-    queryFn: fetchGithubApp,
-    retry: false,
-    staleTime: Number.POSITIVE_INFINITY,
-  });
-}
-
 /** Pre: login is not empty. Post: the search is queued for the backend; navigation never waits on it and a lost beacon is ignored. */
 export function sendProfileSearchBeacon(login: string): void {
   navigator.sendBeacon(

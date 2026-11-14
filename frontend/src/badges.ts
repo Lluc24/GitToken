@@ -16,6 +16,10 @@ export function withConnectedKey(path: string, connectedKey: string): string {
     : `${path}${separator}connected=${encodeURIComponent(connectedKey)}`;
 }
 
+export function readConnectedKey(searchParams: URLSearchParams): string {
+  return searchParams.get("connected") ?? "";
+}
+
 export const badges: readonly Badge[] = [
   {
     name: "Profile",

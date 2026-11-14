@@ -1,6 +1,8 @@
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { sendProfileSearchBeacon } from "./api";
 import { glassClassName, pressableClassName } from "./glass";
+import { searchFocusHash } from "./paths";
 
 type LoginFormProps = {
   initialLogin: string;
@@ -14,6 +16,15 @@ export function LoginForm({
   onSubmitLogin,
 }: LoginFormProps) {
   const [typedLogin, setTypedLogin] = useState(initialLogin);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const location = useLocation();
+  const isSearchFocusRequested = location.hash === searchFocusHash;
+
+  useEffect(() => {
+    if (location.hash === searchFocusHash) {
+      inputRef.current?.focus();
+    }
+  }, [location]);
 
   function submitLogin(event: FormEvent) {
     event.preventDefault();
@@ -32,9 +43,12 @@ export function LoginForm({
       <label className="flex min-w-0 flex-1 flex-col">
         <span className="sr-only">GitHub username</span>
         <input
+          ref={inputRef}
           value={typedLogin}
           onChange={(event) => setTypedLogin(event.target.value)}
-          placeholder="GitHub user"
+          placeholder={
+            isSearchFocusRequested ? "Your GitHub username" : "GitHub user"
+          }
           autoCapitalize="none"
           autoCorrect="off"
           spellCheck={false}

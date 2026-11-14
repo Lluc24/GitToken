@@ -5,6 +5,9 @@ export function profilePath(login: string): string {
   return `/${encodeURIComponent(login)}`;
 }
 
+export const searchFocusHash = "#search";
+export const searchFocusPath = `/${searchFocusHash}`;
+
 export function badgesPagePath(login: string): string {
   return login === "" ? "/badges" : `${profilePath(login)}/badges`;
 }

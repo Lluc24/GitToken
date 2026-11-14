@@ -10,8 +10,8 @@ import {
 } from "react-router-dom";
 import { useProfileTokens } from "./api";
 import { BadgesPage } from "./BadgesPage";
-import { withConnectedKey } from "./badges";
-import { ConnectGithub, ConnectGithubMenu } from "./ConnectGithub";
+import { readConnectedKey, withConnectedKey } from "./badges";
+import { ConnectGithub } from "./ConnectGithub";
 import { formatTokens } from "./format";
 import { glassClassName, pressableClassName } from "./glass";
 import { Leaderboard } from "./Leaderboard";
@@ -59,12 +59,10 @@ function ProfileTokensResult({
         width={300}
         className="drop-shadow-[0_24px_40px_rgb(15_23_42/0.18)] dark:drop-shadow-[0_30px_50px_rgb(0_0_0/0.6)]"
       />
-      {data.includesPrivateRepositories ? (
+      {data.includesPrivateRepositories && (
         <p className="text-night/60 text-sm dark:text-white/60">
           Includes the private repos {data.login} granted to GitToken.
         </p>
-      ) : (
-        <ConnectGithub />
       )}
       <ShareCard
         login={data.login}
@@ -100,7 +98,7 @@ function ProfilePage({
       {submittedLogin !== "" && (
         <ProfileTokensResult
           login={submittedLogin}
-          connectedKey={searchParams.get("connected") ?? ""}
+          connectedKey={readConnectedKey(searchParams)}
         />
       )}
     </main>
@@ -150,7 +148,7 @@ export function App() {
                 strokeWidth="2.5"
               />
             </svg>
-            <span className="max-[359px]:sr-only">GitToken</span>
+            <span className="max-[419px]:sr-only">GitToken</span>
           </Link>
           <nav
             id="site-menu"
@@ -172,7 +170,10 @@ export function App() {
             </Link>
           </nav>
           <div className="flex items-center gap-1">
-            <ConnectGithubMenu />
+            <ConnectGithub
+              login={lastLogin}
+              onNavigate={() => setIsMenuOpen(false)}
+            />
             <ThemeToggle />
             <button
               type="button"
