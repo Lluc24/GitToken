@@ -593,7 +593,8 @@ async def fetch_private_repositories(
 ) -> tuple[PrivateRepository, ...]:
     """Post: lines added by each agent since 2025 in every private non-fork repository the
     profile's account owns and granted to the app; empty when the account has not installed it
-    or GitHub suspended the installation. The installation token is revoked before returning."""
+    or GitHub suspended the installation. The installation token is revoked before returning or
+    raising."""
     installation = await _fetch_installation(
         github_client, _app_authorization(github_app, now), f"/users/{profile.login}/installation"
     )
@@ -610,22 +611,24 @@ async def fetch_private_repositories(
             **_REST_HEADERS,
             "Authorization": f"Bearer {installation_token.token.get_secret_value()}",
         }
-        repositories = [
-            repository
-            for repository in await _fetch_installation_repositories(
-                github_client, installation_authorization
+        try:
+            repositories = [
+                repository
+                for repository in await _fetch_installation_repositories(
+                    github_client, installation_authorization
+                )
+                if repository.private
+                and not repository.fork
+                and repository.owner.id == profile.github_id
+                and _is_pushed_since_commits_start(repository.pushed_at)
+            ]
+            counts = await _count_repositories_lines_added_by_agent(
+                github_client,
+                tuple(repository.node_id for repository in repositories),
+                installation_authorization,
             )
-            if repository.private
-            and not repository.fork
-            and repository.owner.id == profile.github_id
-            and _is_pushed_since_commits_start(repository.pushed_at)
-        ]
-        counts = await _count_repositories_lines_added_by_agent(
-            github_client,
-            tuple(repository.node_id for repository in repositories),
-            installation_authorization,
-        )
-        await _revoke_installation_token(github_client, installation_authorization)
+        finally:
+            await _revoke_installation_token(github_client, installation_authorization)
         return tuple(
             PrivateRepository(RepositoryId(repository.id), MappingProxyType(dict(count)))
             for repository, count in zip(repositories, counts, strict=True)
