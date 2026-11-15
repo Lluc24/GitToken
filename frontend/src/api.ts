@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { z } from "zod";
 import { withConnectedKey } from "./badges";
+import type { GithubLogin } from "./login";
 
 const rarity = z.enum(["common", "rare", "epic", "legendary", "champion"]);
 
@@ -120,8 +121,9 @@ export function useLeaderboard() {
     retry: false,
   });
 }
-/** Pre: login is not empty. Post: the search is queued for the backend; navigation never waits on it and a lost beacon is ignored. */
-export function sendProfileSearchBeacon(login: string): void {
+
+/** Post: the search is queued for the backend; navigation never waits on it and a lost beacon is ignored. */
+export function sendProfileSearchBeacon(login: GithubLogin): void {
   navigator.sendBeacon(
     "/v1/events/profile-search",
     new Blob([JSON.stringify({ login })], { type: "application/json" }),
