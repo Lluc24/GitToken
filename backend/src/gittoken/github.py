@@ -284,8 +284,9 @@ async def _scan_repository(
     lines_added_by_agent: Counter[Agent] = Counter()
     commit_activities: list[dict[date, DayActivity]] = []
     cursor: str | None = None
-    seen_cursors: set[str] = set()
-    while True:
+    seen_cursors: set[str | None] = set()
+    has_next_page = True
+    while has_next_page:
         variables = {
             "repositoryId": repository_node_id,
             "since": _COMMITS_SINCE.isoformat(),
@@ -297,23 +298,21 @@ async def _scan_repository(
             )
         except ValidationError as error:
             raise GithubRequestError("GitHub returned invalid commit data") from error
-        if data.node.default_branch is None:
-            break
-        history = data.node.default_branch.target.history
-        for commit in history.nodes:
-            agent = find_agent(author.email for author in commit.authors.nodes)
-            if agent is not None:
-                lines_added_by_agent[agent] += commit.additions
-                commit_activities.append(
-                    {commit.authored_date.astimezone(UTC).date(): DayActivity(1, commit.additions)}
-                )
-        next_cursor = history.page_info.next_cursor
-        if next_cursor is None:
-            break
+        next_cursor: str | None = None
+        if data.node.default_branch is not None:
+            history = data.node.default_branch.target.history
+            for commit in history.nodes:
+                agent = find_agent(author.email for author in commit.authors.nodes)
+                if agent is not None:
+                    authored_day = commit.authored_date.astimezone(UTC).date()
+                    lines_added_by_agent[agent] += commit.additions
+                    commit_activities.append({authored_day: DayActivity(1, commit.additions)})
+            next_cursor = history.page_info.next_cursor
         if next_cursor in seen_cursors:
             raise GithubRequestError("GitHub repeated a commit pagination cursor")
         seen_cursors.add(next_cursor)
         cursor = next_cursor
+        has_next_page = next_cursor is not None
     return _RepositoryScan(
         MappingProxyType(dict(lines_added_by_agent)), combine_activity(commit_activities)
     )
