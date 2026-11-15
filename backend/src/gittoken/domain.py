@@ -176,7 +176,7 @@ class RepositoriesRevoked:
     repository_ids: tuple[RepositoryId, *tuple[RepositoryId, ...]]
 
 
-# An account took back access, so the profiles built from those private repositories must be forgotten.
+# An account took back access, so the profiles scanned from those private repositories are deleted.
 type ConsentWithdrawal = AccountDisconnected | RepositoriesRevoked
 
 

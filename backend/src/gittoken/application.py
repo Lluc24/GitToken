@@ -133,13 +133,13 @@ async def withdraw_consent(supabase_client: SupabaseClient, withdrawal: ConsentW
             withdrawal_type=type(withdrawal).__name__,
             error_type=type(error).__name__,
             duration_seconds=perf_counter() - started_at,
-        ).warning("Private repositories could not be forgotten")
+        ).warning("Profiles covering withdrawn repositories could not be deleted")
         raise
     logger.bind(
         event="consent_withdrawn",
         withdrawal_type=type(withdrawal).__name__,
         duration_seconds=perf_counter() - started_at,
-    ).info("Private repositories forgotten")
+    ).info("Profiles covering withdrawn repositories deleted")
 
 
 async def find_installation_login(

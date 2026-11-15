@@ -26,7 +26,7 @@ flowchart LR
 2. Keep the main-branch commits that have a coding agent among their authors or co-authors.
 3. Tokens = lines added by those commits × 3,000 (a first guess).
 
-Private repos are opt-in through a GitHub App. An account that installs it has the private, non-fork repos it owns and granted counted the same way, with a short-lived installation token that is revoked after each scan. Only each repo's numeric id and per-agent line counts are stored: no names, commit messages or code. GitHub's webhooks tell the API when access is taken back (app uninstalled or suspended, repo removed, deleted, transferred or made public), and those counts are dropped from the saved profile.
+Private repos are opt-in through a GitHub App. An account that installs it has the private, non-fork repos it owns and granted counted the same way, with a short-lived installation token that is revoked after each scan. Their counts are added to the public ones, and only each repo's numeric id is stored with the profile: no names, commit messages or code. GitHub's webhooks tell the API when access is taken back (app uninstalled or suspended, repo removed, deleted, transferred or made public), and the saved profile is deleted, so the next lookup rescans it without that repo.
 
 The same data is drawn as SVG cards from Jinja templates, for the site and for READMEs. Add `?theme=light` for the light variant (dark by default); the badges page at `/badges` gives a README snippet that follows the reader's GitHub theme.
 

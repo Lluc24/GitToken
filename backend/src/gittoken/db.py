@@ -30,7 +30,7 @@ from gittoken.domain import (
 
 _TIMEOUT_SECONDS = 10
 _USER_TTL = timedelta(days=1)
-# A revoke event can list every repository of an installation; batches keep each URL short.
+# A revoke event can list every repository of an installation; 50 ids keep each URL under 1 KB.
 _REPOSITORY_IDS_PER_REQUEST = 50
 
 SupabaseClient = NewType("SupabaseClient", httpx.AsyncClient)
@@ -108,7 +108,6 @@ def _activity_rows(activity_by_day: Mapping[date, DayActivity]) -> list[dict[str
 
 class _User(BaseModel):
     github_id: int
-    login: str = Field(pattern=GITHUB_LOGIN_PATTERN)
     agents: list[_UserAgent]
     activity: list[_DayActivity]
     granted_repository_ids: list[PositiveInt]
@@ -130,14 +129,13 @@ def _profile_from_user(user: _User, login: VerifiedGithubUsername) -> GithubProf
 async def fetch_cached_profile(
     supabase_client: SupabaseClient, login: VerifiedGithubUsername, now: datetime
 ) -> GithubProfile | None:
-    """Post: the profile saved in the day before now with its public agents and private
-    repositories, or None when there is none."""
+    """Post: the profile saved in the day before now, or None when there is none."""
     fresh_since = now - _USER_TTL
     request = supabase_client.build_request(
         "GET",
         "/users",
         params={
-            "select": "github_id,login,agents,activity,granted_repository_ids",
+            "select": "github_id,agents,activity,granted_repository_ids",
             "login": f"eq.{login.lower()}",
             "fetched_at": f"gte.{fresh_since.isoformat()}",
         },

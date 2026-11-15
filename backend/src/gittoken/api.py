@@ -300,7 +300,8 @@ def _add_github_app_routes(
                 await withdraw_consent(supabase_client, withdrawal)
             except ProfileStoreError as error:
                 raise HTTPException(
-                    status.HTTP_502_BAD_GATEWAY, "Private repositories could not be forgotten"
+                    status.HTTP_502_BAD_GATEWAY,
+                    "Profiles covering withdrawn repositories could not be deleted",
                 ) from error
 
 
