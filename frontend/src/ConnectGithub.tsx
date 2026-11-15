@@ -2,13 +2,14 @@ import { Link, useSearchParams } from "react-router-dom";
 import { useProfileTokens } from "./api";
 import { readConnectedKey } from "./badges";
 import { pressableClassName } from "./glass";
+import type { GithubLogin } from "./login";
 import { searchFocusPath } from "./paths";
 
 const buttonClassName =
   "flex items-center gap-1.5 rounded-full px-3.5 py-2 font-semibold text-sm";
 const enabledClassName = `${buttonClassName} bg-night text-white dark:bg-white dark:text-night ${pressableClassName}`;
 
-type ConnectGithubProps = { login: string; onNavigate: () => void };
+type ConnectGithubProps = { login: GithubLogin | null; onNavigate: () => void };
 
 function GithubMark() {
   return (
@@ -37,8 +38,13 @@ function SearchFirstLink({ onNavigate }: { onNavigate: () => void }) {
   );
 }
 
-/** Pre: login is not empty. */
-function ProfileConnectLink({ login, onNavigate }: ConnectGithubProps) {
+function ProfileConnectLink({
+  login,
+  onNavigate,
+}: {
+  login: GithubLogin;
+  onNavigate: () => void;
+}) {
   const [searchParams] = useSearchParams();
   const profileTokens = useProfileTokens(login, readConnectedKey(searchParams));
   if (profileTokens.isPending) {
@@ -72,7 +78,7 @@ function ProfileConnectLink({ login, onNavigate }: ConnectGithubProps) {
 }
 
 export function ConnectGithub({ login, onNavigate }: ConnectGithubProps) {
-  return login === "" ? (
+  return login === null ? (
     <SearchFirstLink onNavigate={onNavigate} />
   ) : (
     <ProfileConnectLink login={login} onNavigate={onNavigate} />
