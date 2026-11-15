@@ -1,6 +1,5 @@
 import asyncio
 import hmac
-from collections import Counter
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -25,7 +24,7 @@ from pydantic import (
 from gittoken.domain import (
     GITHUB_LOGIN_PATTERN,
     AccountDisconnected,
-    Agent,
+    AgentCommit,
     Avatar,
     ConsentWithdrawal,
     GithubAuthorizationCode,
@@ -38,12 +37,12 @@ from gittoken.domain import (
     InvalidWebhookError,
     OrganizationInstallationError,
     PersonalInstallation,
-    PrivateRepository,
     ProfileNotFoundError,
     RepositoriesRevoked,
     RepositoryId,
     VerifiedGithubUsername,
     find_agent,
+    profile_from_commits,
 )
 
 _API_URL = "https://api.github.com"
@@ -142,7 +141,7 @@ query($repositoryId: ID!, $since: GitTimestamp!, $cursor: String) {
           ... on Commit {
             history(first: 100, since: $since, after: $cursor) {
               pageInfo { hasNextPage endCursor }
-              nodes { additions authors(first: 100) { pageInfo { hasNextPage endCursor } nodes { email } } }
+              nodes { additions authoredDate authors(first: 100) { pageInfo { hasNextPage endCursor } nodes { email } } }
             }
           }
         }
@@ -214,6 +213,7 @@ class _Authors(BaseModel):
 
 class _Commit(BaseModel):
     additions: int = Field(strict=True, ge=0)
+    authored_date: AwareDatetime = Field(alias="authoredDate")
     authors: _Authors
 
 
@@ -264,13 +264,15 @@ async def _query(
     return result.data
 
 
-async def _count_repository_lines_added_by_agent(
+async def _scan_repository(
     github_client: GithubApiClient, repository_node_id: str, headers: Mapping[str, str]
-) -> Counter[Agent]:
-    lines_added_by_agent: Counter[Agent] = Counter()
+) -> tuple[AgentCommit, ...]:
+    """Post: the agent commits on the default branch since 2025, each on its UTC authored day."""
+    agent_commits: list[AgentCommit] = []
     cursor: str | None = None
-    seen_cursors: set[str] = set()
-    while True:
+    seen_cursors: set[str | None] = set()
+    has_next_page = True
+    while has_next_page:
         variables = {
             "repositoryId": repository_node_id,
             "since": _COMMITS_SINCE.isoformat(),
@@ -282,20 +284,24 @@ async def _count_repository_lines_added_by_agent(
             )
         except ValidationError as error:
             raise GithubRequestError("GitHub returned invalid commit data") from error
-        if data.node.default_branch is None:
-            return lines_added_by_agent
-        history = data.node.default_branch.target.history
-        for commit in history.nodes:
-            agent = find_agent(author.email for author in commit.authors.nodes)
-            if agent is not None:
-                lines_added_by_agent[agent] += commit.additions
-        next_cursor = history.page_info.next_cursor
-        if next_cursor is None:
-            return lines_added_by_agent
+        next_cursor: str | None = None
+        if data.node.default_branch is not None:
+            history = data.node.default_branch.target.history
+            for commit in history.nodes:
+                agent = find_agent(author.email for author in commit.authors.nodes)
+                if agent is not None:
+                    agent_commits.append(
+                        AgentCommit(
+                            agent, commit.authored_date.astimezone(UTC).date(), commit.additions
+                        )
+                    )
+            next_cursor = history.page_info.next_cursor
         if next_cursor in seen_cursors:
             raise GithubRequestError("GitHub repeated a commit pagination cursor")
         seen_cursors.add(next_cursor)
         cursor = next_cursor
+        has_next_page = next_cursor is not None
+    return tuple(agent_commits)
 
 
 @dataclass(frozen=True)
@@ -343,45 +349,28 @@ async def _fetch_public_repositories(
         cursor = next_cursor
 
 
-async def _count_repositories_lines_added_by_agent(
+async def _scan_repositories(
     github_client: GithubApiClient, repository_node_ids: tuple[str, ...], headers: Mapping[str, str]
-) -> list[Counter[Agent]]:
-    """Post: one count per repository, in the order of repository_node_ids."""
+) -> tuple[AgentCommit, ...]:
+    """Post: the agent commits of every repository in repository_node_ids."""
     pending_repositories = iter(enumerate(repository_node_ids))
-    counts: list[Counter[Agent]] = [Counter() for _ in repository_node_ids]
+    scans: list[tuple[AgentCommit, ...]] = [() for _ in repository_node_ids]
 
-    async def count_next_repositories() -> None:
+    async def scan_next_repositories() -> None:
         for index, repository_node_id in pending_repositories:
-            counts[index] = await _count_repository_lines_added_by_agent(
-                github_client, repository_node_id, headers
-            )
+            scans[index] = await _scan_repository(github_client, repository_node_id, headers)
 
     workers = [
-        asyncio.create_task(count_next_repositories())
+        asyncio.create_task(scan_next_repositories())
         for _ in range(min(_MAXIMUM_CONCURRENT_REPOSITORIES, len(repository_node_ids)))
     ]
     try:
         await asyncio.gather(*workers)
-        return counts
+        return tuple(commit for scan in scans for commit in scan)
     finally:
         for worker in workers:
             worker.cancel()
         await asyncio.gather(*workers, return_exceptions=True)
-
-
-async def fetch_github_profile(
-    github_client: GithubApiClient, login: VerifiedGithubUsername
-) -> GithubProfile:
-    """Post: lines added by each agent in commits since 2025 across public non-fork repositories,
-    with no private repositories, or ProfileNotFoundError. Failed or incomplete GitHub responses
-    raise GithubRequestError."""
-    public_repositories = await _fetch_public_repositories(github_client, login)
-    counts = await _count_repositories_lines_added_by_agent(
-        github_client, public_repositories.repository_node_ids, {}
-    )
-    return GithubProfile(
-        public_repositories.github_id, login, MappingProxyType(dict(sum(counts, Counter()))), ()
-    )
 
 
 class _Account(BaseModel):
@@ -594,19 +583,29 @@ async def _revoke_installation_token(
         raise GithubRequestError("GitHub could not revoke the installation token") from error
 
 
-async def fetch_private_repositories(
-    github_client: GithubApiClient, github_app: GithubApp, profile: GithubProfile, now: datetime
-) -> tuple[PrivateRepository, ...]:
-    """Post: lines added by each agent since 2025 in every private non-fork repository the
-    profile's account owns and granted to the app; empty when the account has not installed it
-    or GitHub suspended the installation. The installation token is revoked before returning or
-    raising."""
+@dataclass(frozen=True)
+class _PrivateCommits:
+    repository_ids: tuple[RepositoryId, ...]
+    commits: tuple[AgentCommit, ...]
+
+
+async def _fetch_private_commits(
+    github_client: GithubApiClient,
+    github_app: GithubApp,
+    github_id: GithubUserId,
+    login: VerifiedGithubUsername,
+    now: datetime,
+) -> _PrivateCommits:
+    """Post: the agent commits since 2025 in every private non-fork repository the account owns
+    and granted to the app; none when the account has not installed it or GitHub suspended the
+    installation. The installation token is revoked before returning or raising."""
+    private_commits = _PrivateCommits((), ())
     installation = await _fetch_installation(
-        github_client, _app_authorization(github_app, now), f"/users/{profile.login}/installation"
+        github_client, _app_authorization(github_app, now), f"/users/{login}/installation"
     )
     if installation is not None and installation.suspended_at is None:
-        if installation.account.id != profile.github_id:
-            raise GithubRequestError(f"the installation of {profile.login!r} is on another account")
+        if installation.account.id != github_id:
+            raise GithubRequestError(f"the installation of {login!r} is on another account")
         token_request = github_client.build_request(
             "POST",
             f"/app/installations/{installation.id}/access_tokens",
@@ -625,21 +624,44 @@ async def fetch_private_repositories(
                 )
                 if repository.private
                 and not repository.fork
-                and repository.owner.id == profile.github_id
+                and repository.owner.id == github_id
                 and _is_pushed_since_commits_start(repository.pushed_at)
             ]
-            counts = await _count_repositories_lines_added_by_agent(
-                github_client,
-                tuple(repository.node_id for repository in repositories),
-                installation_authorization,
+            private_commits = _PrivateCommits(
+                tuple(RepositoryId(repository.id) for repository in repositories),
+                await _scan_repositories(
+                    github_client,
+                    tuple(repository.node_id for repository in repositories),
+                    installation_authorization,
+                ),
             )
         finally:
             await _revoke_installation_token(github_client, installation_authorization)
-        return tuple(
-            PrivateRepository(RepositoryId(repository.id), MappingProxyType(dict(count)))
-            for repository, count in zip(repositories, counts, strict=True)
-        )
-    return ()
+    return private_commits
+
+
+async def fetch_github_profile(
+    github_client: GithubApiClient,
+    github_app: GithubApp,
+    login: VerifiedGithubUsername,
+    now: datetime,
+) -> GithubProfile:
+    """Post: the agent commits since 2025 across the account's public non-fork repositories and
+    the private ones it granted to the app, or ProfileNotFoundError. Failed or incomplete GitHub
+    responses raise GithubRequestError."""
+    public_repositories = await _fetch_public_repositories(github_client, login)
+    public_commits = await _scan_repositories(
+        github_client, public_repositories.repository_node_ids, {}
+    )
+    private_commits = await _fetch_private_commits(
+        github_client, github_app, public_repositories.github_id, login, now
+    )
+    return profile_from_commits(
+        public_repositories.github_id,
+        login,
+        (*public_commits, *private_commits.commits),
+        private_commits.repository_ids,
+    )
 
 
 class _WebhookAction(BaseModel):

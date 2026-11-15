@@ -23,3 +23,7 @@ export function profileCardPath(login: string, theme: Theme): string {
 export function badgeCardPath(login: string, theme: Theme): string {
   return `/v1/badges/${encodeURIComponent(login)}.svg?theme=${theme}`;
 }
+
+export function activityCardPath(login: string, theme: Theme): string {
+  return `/v1/badges/${encodeURIComponent(login)}/activity.svg?theme=${theme}`;
+}

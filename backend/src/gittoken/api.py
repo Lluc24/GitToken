@@ -38,12 +38,14 @@ from gittoken.application import (
     finish_authorized_installation,
     lookup_profile,
     report_profile_search,
+    today_utc,
     withdraw_consent,
 )
 from gittoken.badge import (
     Theme,
     render_badge,
     render_error_card,
+    render_heatmap,
     render_profile_card,
     render_scanning_card,
 )
@@ -298,7 +300,8 @@ def _add_github_app_routes(
                 await withdraw_consent(supabase_client, withdrawal)
             except ProfileStoreError as error:
                 raise HTTPException(
-                    status.HTTP_502_BAD_GATEWAY, "Private repositories could not be forgotten"
+                    status.HTTP_502_BAD_GATEWAY,
+                    "Profiles covering withdrawn repositories could not be deleted",
                 ) from error
 
 
@@ -406,6 +409,23 @@ def create_app() -> FastAPI:
         async def render_card(profile: GithubProfile) -> str:
             avatar = await fetch_profile_avatar(avatar_client, login)
             return render_profile_card(profile, avatar, theme)
+
+        return await _badge_response(
+            login,
+            theme,
+            profile_lookups.start_or_join(login),
+            background_tasks,
+            render_card,
+        )
+
+    @app.get("/v1/badges/{login}/activity.svg")
+    async def get_activity_heatmap(
+        login: Annotated[VerifiedGithubUsername, Path(pattern=GITHUB_LOGIN_PATTERN)],
+        background_tasks: BackgroundTasks,
+        theme: Theme = Theme.DARK,
+    ) -> Response:
+        async def render_card(profile: GithubProfile) -> str:
+            return render_heatmap(profile, theme, today_utc())
 
         return await _badge_response(
             login,

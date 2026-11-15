@@ -1,15 +1,19 @@
 from base64 import b64encode
 from dataclasses import dataclass
+from datetime import date, timedelta
 from enum import StrEnum
 from io import BytesIO
 
 from jinja2 import Environment, PackageLoader, StrictUndefined
 from PIL import Image
 
-from gittoken.domain import NAME_BY_AGENT, Avatar, GithubProfile
+from gittoken.domain import NAME_BY_AGENT, Avatar, DayActivity, GithubProfile
 
 _MAX_ROWS = 2
 _AVATAR_JPEG_QUALITY = 82
+_HEATMAP_WEEKS = 53
+_DAYS_PER_WEEK = 7
+_NO_ACTIVITY = DayActivity(0, 0)
 
 
 class Theme(StrEnum):
@@ -45,6 +49,7 @@ _environment.filters["compact_tokens"] = _format_tokens
 _badge_template = _environment.get_template("badge.svg.jinja")
 _profile_template = _environment.get_template("profile.svg.jinja")
 _notice_template = _environment.get_template("notice.svg.jinja")
+_heatmap_template = _environment.get_template("heatmap.svg.jinja")
 
 
 def _row(mark: str, name: str, tokens: int, total_tokens: int) -> _Row:
@@ -72,6 +77,72 @@ def render_badge(profile: GithubProfile, theme: Theme) -> str:
         rarity=profile.rarity,
         theme=theme,
         rows=_rows(profile),
+    )
+
+
+@dataclass(frozen=True)
+class _HeatmapCell:
+    week: int
+    weekday: int
+    level: int
+
+
+@dataclass(frozen=True)
+class _MonthLabel:
+    week: int
+    name: str
+
+
+def _activity_level(activity: DayActivity, quartile_tokens: tuple[int, ...]) -> int:
+    """Pre: quartile_tokens are the quartiles of the window's tokens on days with agent commits.
+    Post: 0 for a day without agent commits, else 1 to 4 by quartile, as GitHub shades its graph."""
+    level = 0
+    if activity.commits:
+        level = 1 + sum(activity.tokens > quartile for quartile in quartile_tokens)
+    return level
+
+
+def _quartile_tokens(daily_activities: list[DayActivity]) -> tuple[int, ...]:
+    """Post: the first, second and third quartiles of tokens on days with agent commits; empty
+    if there are none."""
+    active_tokens = sorted(activity.tokens for activity in daily_activities if activity.commits)
+    quartiles: tuple[int, ...] = ()
+    if active_tokens:
+        quartiles = tuple(active_tokens[len(active_tokens) * quarter // 4] for quarter in (1, 2, 3))
+    return quartiles
+
+
+def render_heatmap(profile: GithubProfile, theme: Theme, today: date) -> str:
+    """Post: a grid of the 53 weeks up to today, Sunday first, each day shaded by its tokens."""
+    first_day = today - timedelta(
+        days=(today.weekday() + 1) % _DAYS_PER_WEEK + _DAYS_PER_WEEK * (_HEATMAP_WEEKS - 1)
+    )
+    days = [first_day + timedelta(days=offset) for offset in range((today - first_day).days + 1)]
+    activity_by_day = profile.activity_by_day
+    daily_activities = [activity_by_day.get(day, _NO_ACTIVITY) for day in days]
+    quartile_tokens = _quartile_tokens(daily_activities)
+    cells = [
+        _HeatmapCell(
+            offset // _DAYS_PER_WEEK,
+            offset % _DAYS_PER_WEEK,
+            _activity_level(activity, quartile_tokens),
+        )
+        for offset, activity in enumerate(daily_activities)
+    ]
+    month_labels = [
+        _MonthLabel(offset // _DAYS_PER_WEEK, day.strftime("%b"))
+        for offset, day in enumerate(days)
+        if offset % _DAYS_PER_WEEK == 0 and day.day <= _DAYS_PER_WEEK
+    ]
+    return _heatmap_template.render(
+        login=profile.login,
+        theme=theme,
+        weeks=_HEATMAP_WEEKS,
+        days_per_week=_DAYS_PER_WEEK,
+        cells=cells,
+        month_labels=month_labels,
+        total_tokens=sum(activity.tokens for activity in daily_activities),
+        total_commits=sum(activity.commits for activity in daily_activities),
     )
 
 
