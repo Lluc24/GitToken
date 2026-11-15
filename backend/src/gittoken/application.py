@@ -1,5 +1,5 @@
 from dataclasses import replace
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from time import perf_counter
 
 from loguru import logger
@@ -48,6 +48,10 @@ from gittoken.telemetry import tracer
 # A verified owner can authorize again at will, so a profile scanned this recently is kept to
 # spare the shared GitHub rate limit.
 _MINIMUM_RESCAN_INTERVAL = timedelta(minutes=1)
+
+
+def today_utc() -> date:
+    return datetime.now(UTC).date()
 
 
 async def lookup_profile(

@@ -282,8 +282,7 @@ async def _scan_repository(
     """Post: lines added by each agent, and agent commits and lines added per UTC authored day,
     on the default branch since 2025."""
     lines_added_by_agent: Counter[Agent] = Counter()
-    commits_by_day: Counter[date] = Counter()
-    lines_added_by_day: Counter[date] = Counter()
+    commit_activities: list[dict[date, DayActivity]] = []
     cursor: str | None = None
     seen_cursors: set[str] = set()
     while True:
@@ -304,10 +303,10 @@ async def _scan_repository(
         for commit in history.nodes:
             agent = find_agent(author.email for author in commit.authors.nodes)
             if agent is not None:
-                authored_day = commit.authored_date.astimezone(UTC).date()
                 lines_added_by_agent[agent] += commit.additions
-                commits_by_day[authored_day] += 1
-                lines_added_by_day[authored_day] += commit.additions
+                commit_activities.append(
+                    {commit.authored_date.astimezone(UTC).date(): DayActivity(1, commit.additions)}
+                )
         next_cursor = history.page_info.next_cursor
         if next_cursor is None:
             break
@@ -316,13 +315,7 @@ async def _scan_repository(
         seen_cursors.add(next_cursor)
         cursor = next_cursor
     return _RepositoryScan(
-        MappingProxyType(dict(lines_added_by_agent)),
-        MappingProxyType(
-            {
-                day: DayActivity(commits, lines_added_by_day[day])
-                for day, commits in commits_by_day.items()
-            }
-        ),
+        MappingProxyType(dict(lines_added_by_agent)), combine_activity(commit_activities)
     )
 
 
@@ -399,8 +392,8 @@ async def fetch_github_profile(
     github_client: GithubApiClient, login: VerifiedGithubUsername
 ) -> GithubProfile:
     """Post: lines added by each agent, and agent activity per day, in commits since 2025 across
-    public non-fork repositories, with no private repositories, or ProfileNotFoundError. Failed or incomplete GitHub responses
-    raise GithubRequestError."""
+    public non-fork repositories, with no private repositories, or ProfileNotFoundError. Failed
+    or incomplete GitHub responses raise GithubRequestError."""
     public_repositories = await _fetch_public_repositories(github_client, login)
     scans = await _scan_repositories(github_client, public_repositories.repository_node_ids, {})
     lines_added_by_agent: Counter[Agent] = Counter()
@@ -628,10 +621,10 @@ async def _revoke_installation_token(
 async def fetch_private_repositories(
     github_client: GithubApiClient, github_app: GithubApp, profile: GithubProfile, now: datetime
 ) -> tuple[PrivateRepository, ...]:
-    """Post: lines added by each agent, and agent activity per day, since 2025 in every private non-fork repository the
-    profile's account owns and granted to the app; empty when the account has not installed it
-    or GitHub suspended the installation. The installation token is revoked before returning or
-    raising."""
+    """Post: lines added by each agent, and agent activity per day, since 2025 in every private
+    non-fork repository the profile's account owns and granted to the app; empty when the account
+    has not installed it or GitHub suspended the installation. The installation token is revoked
+    before returning or raising."""
     installation = await _fetch_installation(
         github_client, _app_authorization(github_app, now), f"/users/{profile.login}/installation"
     )

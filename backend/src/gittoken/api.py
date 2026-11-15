@@ -3,7 +3,6 @@ import logging
 import sys
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime
 from typing import Annotated
 from uuid import uuid4
 
@@ -39,6 +38,7 @@ from gittoken.application import (
     finish_authorized_installation,
     lookup_profile,
     report_profile_search,
+    today_utc,
     withdraw_consent,
 )
 from gittoken.badge import (
@@ -424,7 +424,7 @@ def create_app() -> FastAPI:
         theme: Theme = Theme.DARK,
     ) -> Response:
         async def render_card(profile: GithubProfile) -> str:
-            return render_heatmap(profile, theme, datetime.now(UTC).date())
+            return render_heatmap(profile, theme, today_utc())
 
         return await _badge_response(
             login,
