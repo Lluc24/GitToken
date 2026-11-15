@@ -35,6 +35,7 @@ The same data is drawn as SVG cards from Jinja templates, for the site and for R
 | `GET /v1/users/{login}` | Total and per-agent tokens, rarity, and the link that installs the GitHub App on that account |
 | `GET /v1/badges/{login}/profile.svg` | Profile card with the GitHub avatar inlined |
 | `GET /v1/badges/{login}.svg` | Card without the photo |
+| `GET /v1/badges/{login}/activity.svg` | A year of agent commits by day, shaded by tokens |
 | `GET /v1/leaderboard` | Profiles scanned in the last day |
 | `POST /v1/events/profile-search` | Sent by the site on each search; posts the login to Slack |
 | `GET /v1/github-app/setup` | Where GitHub sends the browser after an install or a repository change; when the account's own user authorized the app, drops its cached profile so it is rescanned |

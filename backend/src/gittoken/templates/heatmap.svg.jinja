@@ -1,0 +1,68 @@
+{% set cell = 10 %}
+{% set step = 13 %}
+{% set padding = 22 %}
+{% set grid_left = 50 %}
+{% set grid_top = 84 %}
+{% set width = grid_left + weeks * step - (step - cell) + padding + 18 %}
+{% set height = grid_top + 7 * step - (step - cell) + 44 %}
+{% set font = "-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif" %}
+{% set name = login if login|length <= 24 else login[:23] ~ "…" %}
+{# Per theme: the card base, ink, muted text, accent, cell outline, then the five cell levels from no commits up. #}
+{% set palettes = {
+  "dark": {
+    "background": "#05060f", "ink": "#ffffff", "muted": "#ffffff", "muted_opacity": "0.6", "accent": "#c4b5fd",
+    "glow_opacity": "0.35", "outline": "#ffffff", "outline_opacity": "0.08",
+    "levels": [("#ffffff", "0.08"), ("#67e8f9", "1"), ("#818cf8", "1"), ("#a855f7", "1"), ("#e879f9", "1")],
+  },
+  "light": {
+    "background": "#ffffff", "ink": "#05060f", "muted": "#05060f", "muted_opacity": "0.6", "accent": "#7c3aed",
+    "glow_opacity": "0.28", "outline": "#05060f", "outline_opacity": "0.05",
+    "levels": [("#05060f", "0.05"), ("#a5f3fc", "1"), ("#67e8f9", "1"), ("#a78bfa", "1"), ("#d946ef", "1")],
+  },
+} %}
+{% set palette = palettes[theme] %}
+{% set aria = login ~ ": " ~ "{:,}".format(total_tokens) ~ " estimated tokens in " ~ "{:,}".format(total_commits) ~ " agent commits over the last year" %}
+<svg xmlns="http://www.w3.org/2000/svg" width="{{ width }}" height="{{ height }}" viewBox="0 0 {{ width }} {{ height }}" role="img" aria-label="{{ aria }}">
+  <title>{{ aria }}</title>
+  <defs>
+    <linearGradient id="rim" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#67e8f9"/>
+      <stop offset="0.5" stop-color="#a78bfa"/>
+      <stop offset="1" stop-color="#f0abfc"/>
+    </linearGradient>
+{% for glow, color, center_x, center_y, radius in (("cyan", "#22d3ee", 0.1, 0, 0.6), ("violet", "#8b5cf6", 0.95, 0.3, 0.55), ("pink", "#e879f9", 0.45, 1.1, 0.6)) %}
+    <radialGradient id="{{ glow }}" cx="{{ center_x }}" cy="{{ center_y }}" r="{{ radius }}">
+      <stop offset="0" stop-color="{{ color }}" stop-opacity="{{ palette.glow_opacity }}"/>
+      <stop offset="1" stop-color="{{ color }}" stop-opacity="0"/>
+    </radialGradient>
+{% endfor %}
+  </defs>
+  <rect width="{{ width }}" height="{{ height }}" rx="24" fill="{{ palette.background }}"/>
+{% for glow in ("cyan", "violet", "pink") %}
+  <rect width="{{ width }}" height="{{ height }}" rx="24" fill="url(#{{ glow }})"/>
+{% endfor %}
+  <rect x="1" y="1" width="{{ width - 2 }}" height="{{ height - 2 }}" rx="23" fill="none" stroke="url(#rim)" stroke-width="2"/>
+  <text x="{{ padding }}" y="{{ padding + 18 }}" fill="{{ palette.ink }}" font-family="{{ font }}" font-size="18" font-weight="700" letter-spacing="-0.3">{{ name }}</text>
+  <text x="{{ padding }}" y="{{ padding + 38 }}" fill="{{ palette.muted }}" fill-opacity="{{ palette.muted_opacity }}" font-family="{{ font }}" font-size="11">tokens across {{ "{:,}".format(total_commits) }} agent commits in the last year</text>
+  <text x="{{ width - padding }}" y="{{ padding + 22 }}" text-anchor="end" fill="{{ palette.accent }}" font-family="{{ font }}" font-size="24" font-weight="700" letter-spacing="-0.4">{{ total_tokens | compact_tokens }}</text>
+  <g font-family="{{ font }}" font-size="9.5" fill="{{ palette.muted }}" fill-opacity="{{ palette.muted_opacity }}">
+{% for label in month_labels %}
+    <text x="{{ grid_left + label.week * step }}" y="{{ grid_top - 7 }}">{{ label.name }}</text>
+{% endfor %}
+{% for weekday, name in ((1, "Mon"), (3, "Wed"), (5, "Fri")) %}
+    <text x="{{ grid_left - 8 }}" y="{{ grid_top + weekday * step + cell / 2 + 3.5 }}" text-anchor="end">{{ name }}</text>
+{% endfor %}
+    <text x="{{ grid_left }}" y="{{ height - 14 }}">GitToken</text>
+    <text x="{{ width - padding - 28 - 5 * step - 6 }}" y="{{ height - 14 }}" text-anchor="end">Less</text>
+    <text x="{{ width - padding - 24 }}" y="{{ height - 14 }}">More</text>
+  </g>
+  <g stroke="{{ palette.outline }}" stroke-opacity="{{ palette.outline_opacity }}">
+{% for cell_day in cells %}
+{% set color, opacity = palette.levels[cell_day.level] %}
+    <rect x="{{ grid_left + cell_day.week * step }}" y="{{ grid_top + cell_day.weekday * step }}" width="{{ cell }}" height="{{ cell }}" rx="3" fill="{{ color }}" fill-opacity="{{ opacity }}"/>
+{% endfor %}
+{% for color, opacity in palette.levels %}
+    <rect x="{{ width - padding - 28 - 5 * step + loop.index0 * step }}" y="{{ height - 23 }}" width="{{ cell }}" height="{{ cell }}" rx="3" fill="{{ color }}" fill-opacity="{{ opacity }}"/>
+{% endfor %}
+  </g>
+</svg>

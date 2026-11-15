@@ -1,6 +1,7 @@
 from collections import Counter
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, replace
+from datetime import date
 from enum import StrEnum
 from types import MappingProxyType
 from typing import NewType
@@ -57,6 +58,36 @@ TOKENS_PER_ADDED_LINE = 3000
 
 def estimate_tokens(lines_added: int) -> int:
     return lines_added * TOKENS_PER_ADDED_LINE
+
+
+@dataclass(frozen=True)
+class DayActivity:
+    """Agent commits authored on one UTC day and the lines they added."""
+
+    commits: int
+    lines_added: int
+
+    @property
+    def tokens(self) -> int:
+        return estimate_tokens(self.lines_added)
+
+
+def combine_activity(
+    activities_by_day: Iterable[Mapping[date, DayActivity]],
+) -> MappingProxyType[date, DayActivity]:
+    """Post: commits and lines added summed per day across activities_by_day."""
+    commits_by_day: Counter[date] = Counter()
+    lines_added_by_day: Counter[date] = Counter()
+    for activity_by_day in activities_by_day:
+        for day, activity in activity_by_day.items():
+            commits_by_day[day] += activity.commits
+            lines_added_by_day[day] += activity.lines_added
+    return MappingProxyType(
+        {
+            day: DayActivity(commits, lines_added_by_day[day])
+            for day, commits in commits_by_day.items()
+        }
+    )
 
 
 class Rarity(StrEnum):
@@ -157,6 +188,7 @@ RepositoryId = NewType("RepositoryId", int)
 class PrivateRepository:
     repository_id: RepositoryId
     lines_added_by_agent: MappingProxyType[Agent, int]
+    activity_by_day: MappingProxyType[date, DayActivity]
 
 
 @dataclass(frozen=True)
@@ -178,6 +210,7 @@ class GithubProfile:
     github_id: GithubUserId
     login: VerifiedGithubUsername
     public_lines_added_by_agent: MappingProxyType[Agent, int]
+    public_activity_by_day: MappingProxyType[date, DayActivity]
     private_repositories: tuple[PrivateRepository, ...]
 
     @property
@@ -187,6 +220,16 @@ class GithubProfile:
         for private_repository in self.private_repositories:
             lines_added_by_agent.update(private_repository.lines_added_by_agent)
         return dict(lines_added_by_agent)
+
+    @property
+    def activity_by_day(self) -> MappingProxyType[date, DayActivity]:
+        """Post: public and private agent commits and lines added, summed per day."""
+        return combine_activity(
+            (
+                self.public_activity_by_day,
+                *(repository.activity_by_day for repository in self.private_repositories),
+            )
+        )
 
     @property
     def includes_private_repositories(self) -> bool:

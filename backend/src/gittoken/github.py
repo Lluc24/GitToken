@@ -3,7 +3,7 @@ import hmac
 from collections import Counter
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from hashlib import sha256
 from types import MappingProxyType
 from typing import Literal, NewType, Self
@@ -28,6 +28,7 @@ from gittoken.domain import (
     Agent,
     Avatar,
     ConsentWithdrawal,
+    DayActivity,
     GithubAuthorizationCode,
     GithubProfile,
     GithubRequestError,
@@ -43,6 +44,7 @@ from gittoken.domain import (
     RepositoriesRevoked,
     RepositoryId,
     VerifiedGithubUsername,
+    combine_activity,
     find_agent,
 )
 
@@ -142,7 +144,7 @@ query($repositoryId: ID!, $since: GitTimestamp!, $cursor: String) {
           ... on Commit {
             history(first: 100, since: $since, after: $cursor) {
               pageInfo { hasNextPage endCursor }
-              nodes { additions authors(first: 100) { pageInfo { hasNextPage endCursor } nodes { email } } }
+              nodes { additions authoredDate authors(first: 100) { pageInfo { hasNextPage endCursor } nodes { email } } }
             }
           }
         }
@@ -214,6 +216,7 @@ class _Authors(BaseModel):
 
 class _Commit(BaseModel):
     additions: int = Field(strict=True, ge=0)
+    authored_date: AwareDatetime = Field(alias="authoredDate")
     authors: _Authors
 
 
@@ -264,10 +267,23 @@ async def _query(
     return result.data
 
 
-async def _count_repository_lines_added_by_agent(
+@dataclass(frozen=True)
+class _RepositoryScan:
+    lines_added_by_agent: MappingProxyType[Agent, int]
+    activity_by_day: MappingProxyType[date, DayActivity]
+
+
+_EMPTY_REPOSITORY_SCAN = _RepositoryScan(MappingProxyType({}), MappingProxyType({}))
+
+
+async def _scan_repository(
     github_client: GithubApiClient, repository_node_id: str, headers: Mapping[str, str]
-) -> Counter[Agent]:
+) -> _RepositoryScan:
+    """Post: lines added by each agent, and agent commits and lines added per UTC authored day,
+    on the default branch since 2025."""
     lines_added_by_agent: Counter[Agent] = Counter()
+    commits_by_day: Counter[date] = Counter()
+    lines_added_by_day: Counter[date] = Counter()
     cursor: str | None = None
     seen_cursors: set[str] = set()
     while True:
@@ -283,19 +299,31 @@ async def _count_repository_lines_added_by_agent(
         except ValidationError as error:
             raise GithubRequestError("GitHub returned invalid commit data") from error
         if data.node.default_branch is None:
-            return lines_added_by_agent
+            break
         history = data.node.default_branch.target.history
         for commit in history.nodes:
             agent = find_agent(author.email for author in commit.authors.nodes)
             if agent is not None:
+                authored_day = commit.authored_date.astimezone(UTC).date()
                 lines_added_by_agent[agent] += commit.additions
+                commits_by_day[authored_day] += 1
+                lines_added_by_day[authored_day] += commit.additions
         next_cursor = history.page_info.next_cursor
         if next_cursor is None:
-            return lines_added_by_agent
+            break
         if next_cursor in seen_cursors:
             raise GithubRequestError("GitHub repeated a commit pagination cursor")
         seen_cursors.add(next_cursor)
         cursor = next_cursor
+    return _RepositoryScan(
+        MappingProxyType(dict(lines_added_by_agent)),
+        MappingProxyType(
+            {
+                day: DayActivity(commits, lines_added_by_day[day])
+                for day, commits in commits_by_day.items()
+            }
+        ),
+    )
 
 
 @dataclass(frozen=True)
@@ -343,26 +371,24 @@ async def _fetch_public_repositories(
         cursor = next_cursor
 
 
-async def _count_repositories_lines_added_by_agent(
+async def _scan_repositories(
     github_client: GithubApiClient, repository_node_ids: tuple[str, ...], headers: Mapping[str, str]
-) -> list[Counter[Agent]]:
-    """Post: one count per repository, in the order of repository_node_ids."""
+) -> list[_RepositoryScan]:
+    """Post: one scan per repository, in the order of repository_node_ids."""
     pending_repositories = iter(enumerate(repository_node_ids))
-    counts: list[Counter[Agent]] = [Counter() for _ in repository_node_ids]
+    scans = [_EMPTY_REPOSITORY_SCAN for _ in repository_node_ids]
 
-    async def count_next_repositories() -> None:
+    async def scan_next_repositories() -> None:
         for index, repository_node_id in pending_repositories:
-            counts[index] = await _count_repository_lines_added_by_agent(
-                github_client, repository_node_id, headers
-            )
+            scans[index] = await _scan_repository(github_client, repository_node_id, headers)
 
     workers = [
-        asyncio.create_task(count_next_repositories())
+        asyncio.create_task(scan_next_repositories())
         for _ in range(min(_MAXIMUM_CONCURRENT_REPOSITORIES, len(repository_node_ids)))
     ]
     try:
         await asyncio.gather(*workers)
-        return counts
+        return scans
     finally:
         for worker in workers:
             worker.cancel()
@@ -372,15 +398,20 @@ async def _count_repositories_lines_added_by_agent(
 async def fetch_github_profile(
     github_client: GithubApiClient, login: VerifiedGithubUsername
 ) -> GithubProfile:
-    """Post: lines added by each agent in commits since 2025 across public non-fork repositories,
-    with no private repositories, or ProfileNotFoundError. Failed or incomplete GitHub responses
+    """Post: lines added by each agent, and agent activity per day, in commits since 2025 across
+    public non-fork repositories, with no private repositories, or ProfileNotFoundError. Failed or incomplete GitHub responses
     raise GithubRequestError."""
     public_repositories = await _fetch_public_repositories(github_client, login)
-    counts = await _count_repositories_lines_added_by_agent(
-        github_client, public_repositories.repository_node_ids, {}
-    )
+    scans = await _scan_repositories(github_client, public_repositories.repository_node_ids, {})
+    lines_added_by_agent: Counter[Agent] = Counter()
+    for scan in scans:
+        lines_added_by_agent.update(scan.lines_added_by_agent)
     return GithubProfile(
-        public_repositories.github_id, login, MappingProxyType(dict(sum(counts, Counter()))), ()
+        public_repositories.github_id,
+        login,
+        MappingProxyType(dict(lines_added_by_agent)),
+        combine_activity(scan.activity_by_day for scan in scans),
+        (),
     )
 
 
@@ -597,7 +628,7 @@ async def _revoke_installation_token(
 async def fetch_private_repositories(
     github_client: GithubApiClient, github_app: GithubApp, profile: GithubProfile, now: datetime
 ) -> tuple[PrivateRepository, ...]:
-    """Post: lines added by each agent since 2025 in every private non-fork repository the
+    """Post: lines added by each agent, and agent activity per day, since 2025 in every private non-fork repository the
     profile's account owns and granted to the app; empty when the account has not installed it
     or GitHub suspended the installation. The installation token is revoked before returning or
     raising."""
@@ -628,7 +659,7 @@ async def fetch_private_repositories(
                 and repository.owner.id == profile.github_id
                 and _is_pushed_since_commits_start(repository.pushed_at)
             ]
-            counts = await _count_repositories_lines_added_by_agent(
+            scans = await _scan_repositories(
                 github_client,
                 tuple(repository.node_id for repository in repositories),
                 installation_authorization,
@@ -636,8 +667,10 @@ async def fetch_private_repositories(
         finally:
             await _revoke_installation_token(github_client, installation_authorization)
         return tuple(
-            PrivateRepository(RepositoryId(repository.id), MappingProxyType(dict(count)))
-            for repository, count in zip(repositories, counts, strict=True)
+            PrivateRepository(
+                RepositoryId(repository.id), scan.lines_added_by_agent, scan.activity_by_day
+            )
+            for repository, scan in zip(repositories, scans, strict=True)
         )
     return ()
 

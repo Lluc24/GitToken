@@ -1,4 +1,4 @@
-import { badgeCardPath, profileCardPath } from "./paths";
+import { activityCardPath, badgeCardPath, profileCardPath } from "./paths";
 import type { Theme } from "./theme";
 
 export type Badge = {
@@ -30,5 +30,10 @@ export const badges: readonly Badge[] = [
     name: "Card",
     description: "Rarity, total tokens and top agents, without the photo.",
     path: badgeCardPath,
+  },
+  {
+    name: "Activity",
+    description: "A year of agent commits by day, shaded by tokens.",
+    path: activityCardPath,
   },
 ];

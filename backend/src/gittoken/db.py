@@ -1,6 +1,6 @@
 import json
 from collections.abc import Mapping
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from itertools import batched
 from types import MappingProxyType
 from typing import NewType
@@ -11,6 +11,7 @@ from pydantic import (
     Field,
     HttpUrl,
     NonNegativeInt,
+    PositiveInt,
     SecretStr,
     TypeAdapter,
     ValidationError,
@@ -19,6 +20,7 @@ from pydantic import (
 from gittoken.domain import (
     GITHUB_LOGIN_PATTERN,
     Agent,
+    DayActivity,
     GithubProfile,
     GithubUserId,
     LeaderboardEntry,
@@ -82,20 +84,46 @@ def _agent_rows(lines_added_by_agent: Mapping[Agent, int]) -> list[dict[str, str
     ]
 
 
+class _DayActivity(BaseModel):
+    day: date
+    commits: PositiveInt
+    lines_added: NonNegativeInt
+
+
+def _activity_by_day(
+    day_activities: list[_DayActivity],
+) -> MappingProxyType[date, DayActivity]:
+    return MappingProxyType(
+        {
+            day_activity.day: DayActivity(day_activity.commits, day_activity.lines_added)
+            for day_activity in day_activities
+        }
+    )
+
+
+def _activity_rows(activity_by_day: Mapping[date, DayActivity]) -> list[dict[str, str | int]]:
+    return [
+        {"day": day.isoformat(), "commits": activity.commits, "lines_added": activity.lines_added}
+        for day, activity in activity_by_day.items()
+    ]
+
+
 class _GrantedRepository(BaseModel):
     repository_id: int = Field(gt=0)
     agents: list[_UserAgent]
+    activity: list[_DayActivity]
 
 
 class _User(BaseModel):
     github_id: int
     login: str = Field(pattern=GITHUB_LOGIN_PATTERN)
     agents: list[_UserAgent]
+    activity: list[_DayActivity]
     granted_repositories: list[_GrantedRepository]
 
 
 _USER_ROWS = TypeAdapter(list[_User])
-_USER_COLUMNS = "github_id,login,agents,granted_repositories"
+_USER_COLUMNS = "github_id,login,agents,activity,granted_repositories"
 
 
 def _profile_from_user(user: _User, login: VerifiedGithubUsername) -> GithubProfile:
@@ -103,10 +131,12 @@ def _profile_from_user(user: _User, login: VerifiedGithubUsername) -> GithubProf
         GithubUserId(user.github_id),
         login,
         _lines_added_by_agent(user.agents),
+        _activity_by_day(user.activity),
         tuple(
             PrivateRepository(
                 RepositoryId(private_repository.repository_id),
                 _lines_added_by_agent(private_repository.agents),
+                _activity_by_day(private_repository.activity),
             )
             for private_repository in user.granted_repositories
         ),
@@ -169,6 +199,7 @@ def _granted_repository_rows(
         {
             "repository_id": private_repository.repository_id,
             "agents": _agent_rows(private_repository.lines_added_by_agent),
+            "activity": _activity_rows(private_repository.activity_by_day),
         }
         for private_repository in profile.private_repositories
     ]
@@ -189,6 +220,7 @@ async def save_profile(
             "fetched_at": now.isoformat(),
             "total_tokens": profile.total_tokens,
             "agents": _agent_rows(profile.public_lines_added_by_agent),
+            "activity": _activity_rows(profile.public_activity_by_day),
             "granted_repositories": _granted_repository_rows(profile),
         },
     )
