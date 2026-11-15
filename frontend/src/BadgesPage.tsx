@@ -4,7 +4,11 @@ import { type Badge, badges } from "./badges";
 import { ErrorNotice } from "./ErrorNotice";
 import { glassClassName, pressableClassName } from "./glass";
 import { LoginForm } from "./LoginForm";
-import { type GithubLogin, parseGithubLogin } from "./login";
+import {
+  type GithubLogin,
+  invalidLoginMessage,
+  parseRouteLogin,
+} from "./login";
 import { avatarUrl, badgesPagePath, profilePath } from "./paths";
 import { type Theme, useTheme } from "./theme";
 
@@ -19,7 +23,7 @@ type CopyResult = "copied" | "failed";
 // README follows the reader's GitHub theme through <picture>; the others use the site's theme.
 function snippet(
   format: SnippetFormat,
-  login: string,
+  login: GithubLogin,
   badge: Badge,
   theme: Theme,
 ): string {
@@ -169,7 +173,7 @@ export function BadgesPage({
   onViewLogin: (login: GithubLogin) => void;
 }) {
   const { login: routeLogin } = useParams();
-  const login = routeLogin === undefined ? null : parseGithubLogin(routeLogin);
+  const login = parseRouteLogin(routeLogin);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -207,7 +211,7 @@ export function BadgesPage({
         )}
       </div>
       {routeLogin !== undefined && login === null && (
-        <ErrorNotice message={`${routeLogin} is not a valid GitHub username`} />
+        <ErrorNotice message={invalidLoginMessage(routeLogin)} />
       )}
       {login === null ? (
         <LoginForm

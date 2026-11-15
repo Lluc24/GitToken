@@ -17,7 +17,11 @@ import { formatTokens } from "./format";
 import { glassClassName, pressableClassName } from "./glass";
 import { Leaderboard } from "./Leaderboard";
 import { LoginForm } from "./LoginForm";
-import { type GithubLogin, parseGithubLogin } from "./login";
+import {
+  type GithubLogin,
+  invalidLoginMessage,
+  parseRouteLogin,
+} from "./login";
 import { badgesPagePath, profileCardPath, profilePath } from "./paths";
 import { ShareCard } from "./ShareCard";
 import { ThemeToggle } from "./ThemeToggle";
@@ -74,7 +78,7 @@ function ProfilePage({
   onViewLogin: (login: GithubLogin | null) => void;
 }) {
   const { login: routeLogin } = useParams();
-  const login = routeLogin === undefined ? null : parseGithubLogin(routeLogin);
+  const login = parseRouteLogin(routeLogin);
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
 
@@ -93,9 +97,7 @@ function ProfilePage({
       />
       {routeLogin !== undefined &&
         (login === null ? (
-          <ErrorNotice
-            message={`${routeLogin} is not a valid GitHub username`}
-          />
+          <ErrorNotice message={invalidLoginMessage(routeLogin)} />
         ) : (
           <ProfileTokensResult
             login={login}

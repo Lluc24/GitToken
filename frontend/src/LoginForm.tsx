@@ -1,4 +1,4 @@
-import { type FormEvent, useEffect, useRef, useState } from "react";
+import { type FormEvent, useEffect, useId, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { sendProfileSearchBeacon } from "./api";
 import { glassClassName, pressableClassName } from "./glass";
@@ -18,6 +18,7 @@ export function LoginForm({
 }: LoginFormProps) {
   const [typedLogin, setTypedLogin] = useState(initialLogin);
   const [isInvalid, setIsInvalid] = useState(false);
+  const errorId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
   const location = useLocation();
   const isSearchFocusRequested = location.hash === searchFocusHash;
@@ -54,7 +55,7 @@ export function LoginForm({
               setIsInvalid(false);
             }}
             aria-invalid={isInvalid}
-            aria-describedby={isInvalid ? "login-error" : undefined}
+            aria-describedby={isInvalid ? errorId : undefined}
             placeholder={
               isSearchFocusRequested ? "Your GitHub username" : "GitHub user"
             }
@@ -74,7 +75,7 @@ export function LoginForm({
       </form>
       {isInvalid && (
         <p
-          id="login-error"
+          id={errorId}
           role="alert"
           className="px-5 text-rose-700 text-sm dark:text-rose-200"
         >

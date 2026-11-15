@@ -13,3 +13,14 @@ export function parseGithubLogin(raw: string): GithubLogin | null {
   const parsed = githubLogin.safeParse(raw);
   return parsed.success ? parsed.data : null;
 }
+
+/** Post: null when the route has no :login or it is not a GitHub login. */
+export function parseRouteLogin(
+  routeLogin: string | undefined,
+): GithubLogin | null {
+  return routeLogin === undefined ? null : parseGithubLogin(routeLogin);
+}
+
+export function invalidLoginMessage(routeLogin: string): string {
+  return `${routeLogin} is not a valid GitHub username`;
+}
