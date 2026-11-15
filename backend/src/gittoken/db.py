@@ -1,4 +1,3 @@
-import json
 from collections.abc import Mapping
 from datetime import date, datetime, timedelta
 from itertools import batched
@@ -24,7 +23,6 @@ from gittoken.domain import (
     GithubProfile,
     GithubUserId,
     LeaderboardEntry,
-    PrivateRepository,
     ProfileStoreError,
     RepositoryId,
     VerifiedGithubUsername,
@@ -32,7 +30,7 @@ from gittoken.domain import (
 
 _TIMEOUT_SECONDS = 10
 _USER_TTL = timedelta(days=1)
-# A revoke event can list every repository of an installation; 50 keeps each URL near 4 KB.
+# A revoke event can list every repository of an installation; batches keep each URL short.
 _REPOSITORY_IDS_PER_REQUEST = 50
 
 SupabaseClient = NewType("SupabaseClient", httpx.AsyncClient)
@@ -108,22 +106,15 @@ def _activity_rows(activity_by_day: Mapping[date, DayActivity]) -> list[dict[str
     ]
 
 
-class _GrantedRepository(BaseModel):
-    repository_id: int = Field(gt=0)
-    agents: list[_UserAgent]
-    activity: list[_DayActivity]
-
-
 class _User(BaseModel):
     github_id: int
     login: str = Field(pattern=GITHUB_LOGIN_PATTERN)
     agents: list[_UserAgent]
     activity: list[_DayActivity]
-    granted_repositories: list[_GrantedRepository]
+    granted_repository_ids: list[PositiveInt]
 
 
 _USER_ROWS = TypeAdapter(list[_User])
-_USER_COLUMNS = "github_id,login,agents,activity,granted_repositories"
 
 
 def _profile_from_user(user: _User, login: VerifiedGithubUsername) -> GithubProfile:
@@ -132,14 +123,7 @@ def _profile_from_user(user: _User, login: VerifiedGithubUsername) -> GithubProf
         login,
         _lines_added_by_agent(user.agents),
         _activity_by_day(user.activity),
-        tuple(
-            PrivateRepository(
-                RepositoryId(private_repository.repository_id),
-                _lines_added_by_agent(private_repository.agents),
-                _activity_by_day(private_repository.activity),
-            )
-            for private_repository in user.granted_repositories
-        ),
+        tuple(RepositoryId(repository_id) for repository_id in user.granted_repository_ids),
     )
 
 
@@ -153,7 +137,7 @@ async def fetch_cached_profile(
         "GET",
         "/users",
         params={
-            "select": _USER_COLUMNS,
+            "select": "github_id,login,agents,activity,granted_repository_ids",
             "login": f"eq.{login.lower()}",
             "fetched_at": f"gte.{fresh_since.isoformat()}",
         },
@@ -162,21 +146,6 @@ async def fetch_cached_profile(
     if users:
         return _profile_from_user(users[0], login)
     return None
-
-
-async def fetch_stored_profiles(
-    supabase_client: SupabaseClient, github_ids: frozenset[GithubUserId]
-) -> tuple[GithubProfile, ...]:
-    """Post: the saved profile of each github_id that has a users row, whatever its age, with the
-    login as stored."""
-    joined_github_ids = ",".join(str(github_id) for github_id in github_ids)
-    request = supabase_client.build_request(
-        "GET",
-        "/users",
-        params={"select": _USER_COLUMNS, "github_id": f"in.({joined_github_ids})"},
-    )
-    users = _parse_rows(await _send(supabase_client, request), _USER_ROWS)
-    return tuple(_profile_from_user(user, VerifiedGithubUsername(user.login)) for user in users)
 
 
 async def delete_renamed_user(supabase_client: SupabaseClient, profile: GithubProfile) -> None:
@@ -190,19 +159,6 @@ async def delete_renamed_user(supabase_client: SupabaseClient, profile: GithubPr
         },
     )
     await _send(supabase_client, request)
-
-
-def _granted_repository_rows(
-    profile: GithubProfile,
-) -> list[dict[str, int | list[dict[str, str | int]]]]:
-    return [
-        {
-            "repository_id": private_repository.repository_id,
-            "agents": _agent_rows(private_repository.lines_added_by_agent),
-            "activity": _activity_rows(private_repository.activity_by_day),
-        }
-        for private_repository in profile.private_repositories
-    ]
 
 
 async def save_profile(
@@ -219,27 +175,18 @@ async def save_profile(
             "login": profile.login.lower(),
             "fetched_at": now.isoformat(),
             "total_tokens": profile.total_tokens,
-            "agents": _agent_rows(profile.public_lines_added_by_agent),
-            "activity": _activity_rows(profile.public_activity_by_day),
-            "granted_repositories": _granted_repository_rows(profile),
+            "agents": _agent_rows(profile.lines_added_by_agent),
+            "activity": _activity_rows(profile.activity_by_day),
+            "granted_repository_ids": list(profile.private_repository_ids),
         },
     )
     await _send(supabase_client, request)
 
 
-async def save_granted_repositories(
-    supabase_client: SupabaseClient, profile: GithubProfile
-) -> None:
-    """Post: the account's users row holds the profile's private repositories and total, keeping
-    its saved time."""
+async def delete_profile(supabase_client: SupabaseClient, github_id: GithubUserId) -> None:
+    """Post: the account has no saved profile, so the next lookup rescans it."""
     request = supabase_client.build_request(
-        "PATCH",
-        "/users",
-        params={"github_id": f"eq.{profile.github_id}"},
-        json={
-            "total_tokens": profile.total_tokens,
-            "granted_repositories": _granted_repository_rows(profile),
-        },
+        "DELETE", "/users", params={"github_id": f"eq.{github_id}"}
     )
     await _send(supabase_client, request)
 
@@ -257,25 +204,21 @@ async def delete_profile_saved_before(
     await _send(supabase_client, request)
 
 
-async def fetch_profiles_granting(
+async def delete_profiles_granting(
     supabase_client: SupabaseClient, repository_ids: tuple[RepositoryId, *tuple[RepositoryId, ...]]
-) -> tuple[GithubProfile, ...]:
-    """Post: the saved profile, whatever its age, of each account that granted any of
-    repository_ids, once per account, with the login as stored."""
-    profile_by_github_id: dict[GithubUserId, GithubProfile] = {}
+) -> None:
+    """Post: no saved profile covers any of repository_ids, so each such account's next lookup
+    rescans it."""
     for repository_ids_batch in batched(repository_ids, _REPOSITORY_IDS_PER_REQUEST, strict=False):
-        granted_filters = ",".join(
-            f"granted_repositories.cs.{json.dumps([{'repository_id': repository_id}])}"
-            for repository_id in repository_ids_batch
+        joined_repository_ids = ",".join(
+            str(repository_id) for repository_id in repository_ids_batch
         )
         request = supabase_client.build_request(
-            "GET", "/users", params={"select": _USER_COLUMNS, "or": f"({granted_filters})"}
+            "DELETE",
+            "/users",
+            params={"granted_repository_ids": f"ov.{{{joined_repository_ids}}}"},
         )
-        for user in _parse_rows(await _send(supabase_client, request), _USER_ROWS):
-            profile_by_github_id[GithubUserId(user.github_id)] = _profile_from_user(
-                user, VerifiedGithubUsername(user.login)
-            )
-    return tuple(profile_by_github_id.values())
+        await _send(supabase_client, request)
 
 
 class _LeaderboardRow(BaseModel):

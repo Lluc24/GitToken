@@ -1,4 +1,3 @@
-from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from time import perf_counter
 
@@ -6,13 +5,12 @@ from loguru import logger
 
 from gittoken.db import (
     SupabaseClient,
+    delete_profile,
     delete_profile_saved_before,
+    delete_profiles_granting,
     delete_renamed_user,
     fetch_cached_profile,
     fetch_leaderboard,
-    fetch_profiles_granting,
-    fetch_stored_profiles,
-    save_granted_repositories,
     save_profile,
 )
 from gittoken.domain import (
@@ -29,7 +27,6 @@ from gittoken.domain import (
     RepositoriesRevoked,
     SlackNotificationError,
     VerifiedGithubUsername,
-    without_withdrawn_repositories,
 )
 from gittoken.github import (
     GithubApiClient,
@@ -40,7 +37,6 @@ from gittoken.github import (
     fetch_avatar,
     fetch_github_profile,
     fetch_personal_installation,
-    fetch_private_repositories,
 )
 from gittoken.slack import SlackActivityClient, notify_profile_search
 from gittoken.telemetry import tracer
@@ -74,13 +70,7 @@ async def lookup_profile(
             with tracer.start_as_current_span(
                 "github.scan", record_exception=False, set_status_on_exception=False
             ):
-                profile = await fetch_github_profile(github_client, login)
-                profile = replace(
-                    profile,
-                    private_repositories=await fetch_private_repositories(
-                        github_client, github_app, profile, now
-                    ),
-                )
+                profile = await fetch_github_profile(github_client, github_app, login, now)
             with tracer.start_as_current_span(
                 "profile.persist", record_exception=False, set_status_on_exception=False
             ):
@@ -127,23 +117,16 @@ async def fetch_profile_avatar(
 
 
 async def withdraw_consent(supabase_client: SupabaseClient, withdrawal: ConsentWithdrawal) -> None:
-    """Post: every affected account's saved profile no longer holds the withdrawn private
-    repositories, and its leaderboard total is recomputed from what remains, one update per account.
-    A save landing between the read and the update is overwritten without the withdrawn
-    repositories, so it can only under-report until the next scan."""
+    """Post: no saved profile covers the withdrawn private repositories, so the next lookup of each
+    affected account rescans it without them. A scan already running when the consent is withdrawn
+    can save them again until the account's next rescan."""
     started_at = perf_counter()
     try:
         match withdrawal:
             case AccountDisconnected(github_id):
-                affected_profiles = await fetch_stored_profiles(
-                    supabase_client, frozenset({github_id})
-                )
+                await delete_profile(supabase_client, github_id)
             case RepositoriesRevoked(repository_ids):
-                affected_profiles = await fetch_profiles_granting(supabase_client, repository_ids)
-        for profile in affected_profiles:
-            await save_granted_repositories(
-                supabase_client, without_withdrawn_repositories(profile, withdrawal)
-            )
+                await delete_profiles_granting(supabase_client, repository_ids)
     except ProfileStoreError as error:
         logger.bind(
             event="consent_withdrawal_error",
@@ -155,7 +138,6 @@ async def withdraw_consent(supabase_client: SupabaseClient, withdrawal: ConsentW
     logger.bind(
         event="consent_withdrawn",
         withdrawal_type=type(withdrawal).__name__,
-        affected_account_count=len(affected_profiles),
         duration_seconds=perf_counter() - started_at,
     ).info("Private repositories forgotten")
 

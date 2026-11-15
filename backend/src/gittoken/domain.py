@@ -1,6 +1,6 @@
 from collections import Counter
-from collections.abc import Iterable, Mapping
-from dataclasses import dataclass, replace
+from collections.abc import Iterable
+from dataclasses import dataclass
 from datetime import date
 from enum import StrEnum
 from types import MappingProxyType
@@ -70,24 +70,6 @@ class DayActivity:
     @property
     def tokens(self) -> int:
         return estimate_tokens(self.lines_added)
-
-
-def combine_activity(
-    activities_by_day: Iterable[Mapping[date, DayActivity]],
-) -> MappingProxyType[date, DayActivity]:
-    """Post: commits and lines added summed per day across activities_by_day."""
-    commits_by_day: Counter[date] = Counter()
-    lines_added_by_day: Counter[date] = Counter()
-    for activity_by_day in activities_by_day:
-        for day, activity in activity_by_day.items():
-            commits_by_day[day] += activity.commits
-            lines_added_by_day[day] += activity.lines_added
-    return MappingProxyType(
-        {
-            day: DayActivity(commits, lines_added_by_day[day])
-            for day, commits in commits_by_day.items()
-        }
-    )
 
 
 class Rarity(StrEnum):
@@ -185,13 +167,6 @@ RepositoryId = NewType("RepositoryId", int)
 
 
 @dataclass(frozen=True)
-class PrivateRepository:
-    repository_id: RepositoryId
-    lines_added_by_agent: MappingProxyType[Agent, int]
-    activity_by_day: MappingProxyType[date, DayActivity]
-
-
-@dataclass(frozen=True)
 class AccountDisconnected:
     github_id: GithubUserId
 
@@ -201,39 +176,28 @@ class RepositoriesRevoked:
     repository_ids: tuple[RepositoryId, *tuple[RepositoryId, ...]]
 
 
-# An account took back access, so the private repositories it covered must be forgotten.
+# An account took back access, so the profiles built from those private repositories must be forgotten.
 type ConsentWithdrawal = AccountDisconnected | RepositoriesRevoked
+
+
+@dataclass(frozen=True)
+class AgentCommit:
+    agent: Agent
+    authored_day: date
+    lines_added: int
 
 
 @dataclass(frozen=True)
 class GithubProfile:
     github_id: GithubUserId
     login: VerifiedGithubUsername
-    public_lines_added_by_agent: MappingProxyType[Agent, int]
-    public_activity_by_day: MappingProxyType[date, DayActivity]
-    private_repositories: tuple[PrivateRepository, ...]
-
-    @property
-    def lines_added_by_agent(self) -> dict[Agent, int]:
-        """Post: public and private lines added, summed per agent."""
-        lines_added_by_agent = Counter(self.public_lines_added_by_agent)
-        for private_repository in self.private_repositories:
-            lines_added_by_agent.update(private_repository.lines_added_by_agent)
-        return dict(lines_added_by_agent)
-
-    @property
-    def activity_by_day(self) -> MappingProxyType[date, DayActivity]:
-        """Post: public and private agent commits and lines added, summed per day."""
-        return combine_activity(
-            (
-                self.public_activity_by_day,
-                *(repository.activity_by_day for repository in self.private_repositories),
-            )
-        )
+    lines_added_by_agent: MappingProxyType[Agent, int]
+    activity_by_day: MappingProxyType[date, DayActivity]
+    private_repository_ids: tuple[RepositoryId, ...]
 
     @property
     def includes_private_repositories(self) -> bool:
-        return len(self.private_repositories) > 0
+        return len(self.private_repository_ids) > 0
 
     @property
     def total_tokens(self) -> int:
@@ -254,20 +218,32 @@ class GithubProfile:
         return rarity_for(self.total_tokens)
 
 
-def without_withdrawn_repositories(
-    profile: GithubProfile, withdrawal: ConsentWithdrawal
+def profile_from_commits(
+    github_id: GithubUserId,
+    login: VerifiedGithubUsername,
+    commits: Iterable[AgentCommit],
+    private_repository_ids: tuple[RepositoryId, ...],
 ) -> GithubProfile:
-    """Post: the profile without the private repositories the withdrawal covers."""
-    match withdrawal:
-        case AccountDisconnected():
-            kept_repositories: tuple[PrivateRepository, ...] = ()
-        case RepositoriesRevoked(repository_ids):
-            kept_repositories = tuple(
-                private_repository
-                for private_repository in profile.private_repositories
-                if private_repository.repository_id not in repository_ids
-            )
-    return replace(profile, private_repositories=kept_repositories)
+    """Post: lines added summed per agent, and commits and lines added summed per authored day."""
+    lines_added_by_agent: Counter[Agent] = Counter()
+    commits_by_day: Counter[date] = Counter()
+    lines_added_by_day: Counter[date] = Counter()
+    for commit in commits:
+        lines_added_by_agent[commit.agent] += commit.lines_added
+        commits_by_day[commit.authored_day] += 1
+        lines_added_by_day[commit.authored_day] += commit.lines_added
+    return GithubProfile(
+        github_id,
+        login,
+        MappingProxyType(dict(lines_added_by_agent)),
+        MappingProxyType(
+            {
+                day: DayActivity(commit_count, lines_added_by_day[day])
+                for day, commit_count in commits_by_day.items()
+            }
+        ),
+        private_repository_ids,
+    )
 
 
 @dataclass(frozen=True)
