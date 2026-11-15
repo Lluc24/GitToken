@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { type Badge, badges } from "./badges";
+import { ErrorNotice } from "./ErrorNotice";
 import { glassClassName, pressableClassName } from "./glass";
 import { LoginForm } from "./LoginForm";
+import { type GithubLogin, parseGithubLogin } from "./login";
 import { avatarUrl, badgesPagePath, profilePath } from "./paths";
 import { type Theme, useTheme } from "./theme";
 
@@ -71,7 +73,7 @@ function SegmentedControl<Option extends string>({
   );
 }
 
-function BadgeSection({ login, badge }: { login: string; badge: Badge }) {
+function BadgeSection({ login, badge }: { login: GithubLogin; badge: Badge }) {
   const theme = useTheme();
   const [format, setFormat] = useState<SnippetFormat>("README");
   const [copyResult, setCopyResult] = useState<CopyResult | null>(null);
@@ -164,13 +166,14 @@ function BadgeSection({ login, badge }: { login: string; badge: Badge }) {
 export function BadgesPage({
   onViewLogin,
 }: {
-  onViewLogin: (login: string) => void;
+  onViewLogin: (login: GithubLogin) => void;
 }) {
-  const { login = "" } = useParams();
+  const { login: routeLogin } = useParams();
+  const login = routeLogin === undefined ? null : parseGithubLogin(routeLogin);
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (login !== "") {
+    if (login !== null) {
       onViewLogin(login);
     }
   }, [onViewLogin, login]);
@@ -184,7 +187,7 @@ export function BadgesPage({
             Embed your GitToken in a README or a website. They update every day.
           </p>
         </div>
-        {login !== "" && (
+        {login !== null && (
           <div
             className={`flex max-w-full items-center gap-2 rounded-full p-1 ${glassClassName}`}
           >
@@ -203,7 +206,10 @@ export function BadgesPage({
           </div>
         )}
       </div>
-      {login === "" ? (
+      {routeLogin !== undefined && login === null && (
+        <ErrorNotice message={`${routeLogin} is not a valid GitHub username`} />
+      )}
+      {login === null ? (
         <LoginForm
           initialLogin=""
           submitLabel="Show badges"

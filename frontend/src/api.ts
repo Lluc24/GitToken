@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { z } from "zod";
 import { withConnectedKey } from "./badges";
-import type { GithubLogin } from "./login";
+import { type GithubLogin, githubLogin } from "./login";
 
 const rarity = z.enum(["common", "rare", "epic", "legendary", "champion"]);
 
@@ -27,7 +27,7 @@ async function parseBody<T>(
 }
 
 const profileTokensResponse = z.object({
-  login: z.string(),
+  login: githubLogin,
   total_tokens: z.number(),
   rarity,
   tokens_by_agent: z.record(z.string(), z.number()),
@@ -36,7 +36,7 @@ const profileTokensResponse = z.object({
 });
 
 export type ProfileTokens = {
-  login: string;
+  login: GithubLogin;
   totalTokens: number;
   rarity: Rarity;
   tokensByAgent: Record<string, number>;
@@ -45,7 +45,7 @@ export type ProfileTokens = {
 };
 
 async function fetchProfileTokens(
-  login: string,
+  login: GithubLogin,
   connectedKey: string,
 ): Promise<ProfileTokens> {
   const response = await fetch(
@@ -53,9 +53,6 @@ async function fetchProfileTokens(
   );
   if (response.status === 404) {
     throw new Error(`No GitHub user named ${login}`);
-  }
-  if (response.status === 422) {
-    throw new Error(`${login} is not a valid GitHub username`);
   }
   if (!response.ok) {
     throw new Error(`The GitToken API answered ${response.status}`);
@@ -75,8 +72,7 @@ async function fetchProfileTokens(
   };
 }
 
-/** Pre: login is not empty. */
-export function useProfileTokens(login: string, connectedKey: string) {
+export function useProfileTokens(login: GithubLogin, connectedKey: string) {
   return useQuery({
     queryKey: ["profile-tokens", login, connectedKey],
     queryFn: () => fetchProfileTokens(login, connectedKey),
@@ -86,14 +82,14 @@ export function useProfileTokens(login: string, connectedKey: string) {
 
 const leaderboardResponse = z.array(
   z.object({
-    login: z.string(),
+    login: githubLogin,
     total_tokens: z.number(),
     rarity,
   }),
 );
 
 export type LeaderboardEntry = {
-  login: string;
+  login: GithubLogin;
   totalTokens: number;
   rarity: Rarity;
 };

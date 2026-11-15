@@ -12,10 +12,12 @@ import { useProfileTokens } from "./api";
 import { BadgesPage } from "./BadgesPage";
 import { readConnectedKey, withConnectedKey } from "./badges";
 import { ConnectGithub } from "./ConnectGithub";
+import { ErrorNotice } from "./ErrorNotice";
 import { formatTokens } from "./format";
 import { glassClassName, pressableClassName } from "./glass";
 import { Leaderboard } from "./Leaderboard";
 import { LoginForm } from "./LoginForm";
+import { type GithubLogin, parseGithubLogin } from "./login";
 import { badgesPagePath, profileCardPath, profilePath } from "./paths";
 import { ShareCard } from "./ShareCard";
 import { ThemeToggle } from "./ThemeToggle";
@@ -25,7 +27,7 @@ function ProfileTokensResult({
   login,
   connectedKey,
 }: {
-  login: string;
+  login: GithubLogin;
   connectedKey: string;
 }) {
   const profileTokens = useProfileTokens(login, connectedKey);
@@ -41,14 +43,7 @@ function ProfileTokensResult({
     );
   }
   if (profileTokens.isError) {
-    return (
-      <p
-        role="alert"
-        className={`rounded-3xl px-5 py-3 text-rose-700 dark:text-rose-200 ${glassClassName}`}
-      >
-        {profileTokens.error.message}
-      </p>
-    );
+    return <ErrorNotice message={profileTokens.error.message} />;
   }
   const { data } = profileTokens;
   return (
@@ -76,13 +71,14 @@ function ProfileTokensResult({
 function ProfilePage({
   onViewLogin,
 }: {
-  onViewLogin: (login: string) => void;
+  onViewLogin: (login: GithubLogin | null) => void;
 }) {
-  const { login: submittedLogin = "" } = useParams();
+  const { login: routeLogin } = useParams();
+  const login = routeLogin === undefined ? null : parseGithubLogin(routeLogin);
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
 
-  useEffect(() => onViewLogin(submittedLogin), [onViewLogin, submittedLogin]);
+  useEffect(() => onViewLogin(login), [onViewLogin, login]);
 
   return (
     <main className="mx-auto flex max-w-xl flex-col items-center gap-8 px-4 py-12">
@@ -90,24 +86,29 @@ function ProfilePage({
         GitToken
       </h1>
       <LoginForm
-        key={submittedLogin}
-        initialLogin={submittedLogin}
+        key={routeLogin}
+        initialLogin={routeLogin ?? ""}
         submitLabel="Estimate"
-        onSubmitLogin={(login) => navigate(profilePath(login))}
+        onSubmitLogin={(typedLogin) => navigate(profilePath(typedLogin))}
       />
-      {submittedLogin !== "" && (
-        <ProfileTokensResult
-          login={submittedLogin}
-          connectedKey={readConnectedKey(searchParams)}
-        />
-      )}
+      {routeLogin !== undefined &&
+        (login === null ? (
+          <ErrorNotice
+            message={`${routeLogin} is not a valid GitHub username`}
+          />
+        ) : (
+          <ProfileTokensResult
+            login={login}
+            connectedKey={readConnectedKey(searchParams)}
+          />
+        ))}
     </main>
   );
 }
 
 export function App() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [lastLogin, setLastLogin] = useState("");
+  const [lastLogin, setLastLogin] = useState<GithubLogin | null>(null);
 
   return (
     <BrowserRouter>
@@ -121,7 +122,7 @@ export function App() {
           className={`sticky top-4 z-10 mx-auto mt-4 flex w-[calc(100%-2rem)] max-w-3xl flex-wrap items-center justify-between gap-x-1 py-2 pr-2 pl-4 ${isMenuOpen ? "rounded-[28px] sm:rounded-full" : "rounded-full"} ${glassClassName}`}
         >
           <Link
-            to={profilePath(lastLogin)}
+            to={profilePath(lastLogin ?? "")}
             className="flex items-center gap-2.5 font-bold text-lg tracking-tight"
             onClick={() => setIsMenuOpen(false)}
           >
@@ -162,7 +163,7 @@ export function App() {
               Leaderboard
             </Link>
             <Link
-              to={badgesPagePath(lastLogin)}
+              to={badgesPagePath(lastLogin ?? "")}
               className={`rounded-full px-4 py-2 text-night/80 dark:text-white/80 hover:bg-night/15 dark:hover:bg-white/15 hover:text-night dark:hover:text-white ${pressableClassName}`}
               onClick={() => setIsMenuOpen(false)}
             >
