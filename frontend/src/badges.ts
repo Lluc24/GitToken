@@ -1,10 +1,11 @@
+import type { GithubLogin } from "./login";
 import { activityCardPath, badgeCardPath, profileCardPath } from "./paths";
 import type { Theme } from "./theme";
 
 export type Badge = {
   readonly name: string;
   readonly description: string;
-  readonly path: (login: string, theme: Theme) => string;
+  readonly path: (login: GithubLogin, theme: Theme) => string;
 };
 
 /** Pre: connectedKey is empty, or the key the GitHub App setup redirect added so the CDN's

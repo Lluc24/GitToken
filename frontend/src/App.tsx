@@ -22,7 +22,13 @@ import {
   invalidLoginMessage,
   parseRouteLogin,
 } from "./login";
-import { badgesPagePath, profileCardPath, profilePath } from "./paths";
+import {
+  badgesIndexPath,
+  badgesPagePath,
+  homePath,
+  profileCardPath,
+  profilePath,
+} from "./paths";
 import { ShareCard } from "./ShareCard";
 import { ThemeToggle } from "./ThemeToggle";
 import { useTheme } from "./theme";
@@ -124,7 +130,7 @@ export function App() {
           className={`sticky top-4 z-10 mx-auto mt-4 flex w-[calc(100%-2rem)] max-w-3xl flex-wrap items-center justify-between gap-x-1 py-2 pr-2 pl-4 ${isMenuOpen ? "rounded-[28px] sm:rounded-full" : "rounded-full"} ${glassClassName}`}
         >
           <Link
-            to={profilePath(lastLogin ?? "")}
+            to={lastLogin === null ? homePath : profilePath(lastLogin)}
             className="flex items-center gap-2.5 font-bold text-lg tracking-tight"
             onClick={() => setIsMenuOpen(false)}
           >
@@ -165,7 +171,9 @@ export function App() {
               Leaderboard
             </Link>
             <Link
-              to={badgesPagePath(lastLogin ?? "")}
+              to={
+                lastLogin === null ? badgesIndexPath : badgesPagePath(lastLogin)
+              }
               className={`rounded-full px-4 py-2 text-night/80 dark:text-white/80 hover:bg-night/15 dark:hover:bg-white/15 hover:text-night dark:hover:text-white ${pressableClassName}`}
               onClick={() => setIsMenuOpen(false)}
             >
@@ -239,7 +247,7 @@ export function App() {
                   Page not found
                 </h1>
                 <Link
-                  to="/"
+                  to={homePath}
                   className="text-cyan-700 hover:text-cyan-600 dark:text-cyan-300 dark:hover:text-cyan-200"
                 >
                   Back to GitToken

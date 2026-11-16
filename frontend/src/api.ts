@@ -49,7 +49,7 @@ async function fetchProfileTokens(
   connectedKey: string,
 ): Promise<ProfileTokens> {
   const response = await fetch(
-    withConnectedKey(`/v1/users/${encodeURIComponent(login)}`, connectedKey),
+    withConnectedKey(`/v1/users/${login}`, connectedKey),
   );
   if (response.status === 404) {
     throw new Error(`No GitHub user named ${login}`);
