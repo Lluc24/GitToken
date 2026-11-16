@@ -1,29 +1,31 @@
+import type { GithubLogin } from "./login";
 import type { Theme } from "./theme";
 
-/** Post: "/" when login is empty. */
-export function profilePath(login: string): string {
-  return `/${encodeURIComponent(login)}`;
-}
-
+export const homePath = "/";
+export const badgesIndexPath = "/badges";
 export const searchFocusHash = "#search";
-export const searchFocusPath = `/${searchFocusHash}`;
+export const searchFocusPath = `${homePath}${searchFocusHash}`;
 
-export function badgesPagePath(login: string): string {
-  return login === "" ? "/badges" : `${profilePath(login)}/badges`;
+export function profilePath(login: GithubLogin): string {
+  return `/${login}`;
 }
 
-export function avatarUrl(login: string): string {
-  return `https://avatars.githubusercontent.com/${encodeURIComponent(login)}?size=64`;
+export function badgesPagePath(login: GithubLogin): string {
+  return `${profilePath(login)}/badges`;
 }
 
-export function profileCardPath(login: string, theme: Theme): string {
-  return `/v1/badges/${encodeURIComponent(login)}/profile.svg?theme=${theme}`;
+export function avatarUrl(login: GithubLogin): string {
+  return `https://avatars.githubusercontent.com/${login}?size=64`;
 }
 
-export function badgeCardPath(login: string, theme: Theme): string {
-  return `/v1/badges/${encodeURIComponent(login)}.svg?theme=${theme}`;
+export function profileCardPath(login: GithubLogin, theme: Theme): string {
+  return `/v1/badges/${login}/profile.svg?theme=${theme}`;
 }
 
-export function activityCardPath(login: string, theme: Theme): string {
-  return `/v1/badges/${encodeURIComponent(login)}/activity.svg?theme=${theme}`;
+export function badgeCardPath(login: GithubLogin, theme: Theme): string {
+  return `/v1/badges/${login}.svg?theme=${theme}`;
+}
+
+export function activityCardPath(login: GithubLogin, theme: Theme): string {
+  return `/v1/badges/${login}/activity.svg?theme=${theme}`;
 }

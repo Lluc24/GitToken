@@ -9,7 +9,12 @@ import {
   invalidLoginMessage,
   parseRouteLogin,
 } from "./login";
-import { avatarUrl, badgesPagePath, profilePath } from "./paths";
+import {
+  avatarUrl,
+  badgesIndexPath,
+  badgesPagePath,
+  profilePath,
+} from "./paths";
 import { type Theme, useTheme } from "./theme";
 
 type SnippetFormat = "README" | "Markdown" | "URL";
@@ -202,7 +207,7 @@ export function BadgesPage({
             />
             <span className="min-w-0 truncate font-medium">{login}</span>
             <Link
-              to="/badges"
+              to={badgesIndexPath}
               className="shrink-0 rounded-full bg-night/10 dark:bg-white/10 px-3 py-2 text-sm sm:py-1.5 text-night/80 dark:text-white/80 hover:bg-night/20 dark:hover:bg-white/20 hover:text-night dark:hover:text-white"
             >
               Change
