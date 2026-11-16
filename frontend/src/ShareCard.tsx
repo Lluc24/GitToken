@@ -3,17 +3,18 @@ import { Link } from "react-router-dom";
 import { withConnectedKey } from "./badges";
 import { formatTokens } from "./format";
 import { pressableClassName } from "./glass";
+import type { GithubLogin } from "./login";
 import { badgesPagePath, profileCardPath, profilePath } from "./paths";
 import { type Theme, useTheme } from "./theme";
 
 type ShareCardProps = {
-  login: string;
+  login: GithubLogin;
   totalTokens: number;
   connectedKey: string;
 };
 
 async function renderCardPng(
-  login: string,
+  login: GithubLogin,
   theme: Theme,
   connectedKey: string,
 ): Promise<File> {
