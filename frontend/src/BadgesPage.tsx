@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { type Badge, badges } from "./badges";
 import { ErrorNotice } from "./ErrorNotice";
-import { glassClassName, pressableClassName } from "./glass";
+import { glassClassName, primaryActionClassName } from "./glass";
 import { LoginForm } from "./LoginForm";
 import {
   type GithubLogin,
@@ -124,7 +124,7 @@ function BadgeSection({ login, badge }: { login: GithubLogin; badge: Badge }) {
         <button
           type="button"
           onClick={copySnippet}
-          className={`shrink-0 rounded-full bg-gradient-to-br from-cyan-300 via-violet-400 to-fuchsia-400 px-4 py-2 font-semibold sm:py-1.5 text-night text-sm ${pressableClassName}`}
+          className={`shrink-0 px-4 py-2 text-sm sm:py-1.5 ${primaryActionClassName}`}
         >
           {isCopied ? "Copied ✓" : "Copy"}
         </button>

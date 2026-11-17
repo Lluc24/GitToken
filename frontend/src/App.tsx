@@ -14,7 +14,7 @@ import { readConnectedKey, withConnectedKey } from "./badges";
 import { ConnectGithub } from "./ConnectGithub";
 import { ErrorNotice } from "./ErrorNotice";
 import { formatTokens } from "./format";
-import { glassClassName, pressableClassName } from "./glass";
+import { glassClassName, navLinkClassName } from "./glass";
 import { Leaderboard } from "./Leaderboard";
 import { LoginForm } from "./LoginForm";
 import {
@@ -165,7 +165,7 @@ export function App() {
           >
             <Link
               to="/leaderboard"
-              className={`rounded-full px-4 py-2 text-night/80 dark:text-white/80 hover:bg-night/15 dark:hover:bg-white/15 hover:text-night dark:hover:text-white ${pressableClassName}`}
+              className={navLinkClassName}
               onClick={() => setIsMenuOpen(false)}
             >
               Leaderboard
@@ -174,7 +174,7 @@ export function App() {
               to={
                 lastLogin === null ? badgesIndexPath : badgesPagePath(lastLogin)
               }
-              className={`rounded-full px-4 py-2 text-night/80 dark:text-white/80 hover:bg-night/15 dark:hover:bg-white/15 hover:text-night dark:hover:text-white ${pressableClassName}`}
+              className={navLinkClassName}
               onClick={() => setIsMenuOpen(false)}
             >
               Badges
