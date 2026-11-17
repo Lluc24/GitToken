@@ -15,11 +15,12 @@ import {
   badgesPagePath,
   profilePath,
 } from "./paths";
+import { SegmentedControl } from "./SegmentedControl";
 import { type Theme, useTheme } from "./theme";
 
-type SnippetFormat = "README" | "Markdown" | "URL";
+const snippetFormats = ["README", "Markdown", "URL"] as const;
 
-const snippetFormats: SnippetFormat[] = ["README", "Markdown", "URL"];
+type SnippetFormat = (typeof snippetFormats)[number];
 
 const copiedLabelDurationMilliseconds = 2000;
 
@@ -49,37 +50,6 @@ function snippet(
     URL: badgeUrl,
   };
   return snippetByFormat[format];
-}
-
-type SegmentedControlProps<Option extends string> = {
-  label: string;
-  options: Option[];
-  selected: Option;
-  onSelect: (option: Option) => void;
-};
-
-function SegmentedControl<Option extends string>({
-  label,
-  options,
-  selected,
-  onSelect,
-}: SegmentedControlProps<Option>) {
-  return (
-    <fieldset className="flex w-fit rounded-full bg-night/10 dark:bg-white/10 p-1 text-sm">
-      <legend className="sr-only">{label}</legend>
-      {options.map((option) => (
-        <button
-          key={option}
-          type="button"
-          aria-pressed={option === selected}
-          onClick={() => onSelect(option)}
-          className={`rounded-full px-3 py-2 transition-colors sm:py-1 ${option === selected ? "bg-night dark:bg-white font-medium text-white dark:text-night" : "text-night/70 dark:text-white/70 hover:text-night dark:hover:text-white"}`}
-        >
-          {option}
-        </button>
-      ))}
-    </fieldset>
-  );
 }
 
 function BadgeSection({ login, badge }: { login: GithubLogin; badge: Badge }) {
@@ -140,9 +110,11 @@ function BadgeSection({ login, badge }: { login: GithubLogin; badge: Badge }) {
       <div className="mt-4">
         <SegmentedControl
           label="Snippet format"
+          variant="text"
           options={snippetFormats}
           selected={format}
           onSelect={selectFormat}
+          renderOption={(option) => option}
         />
       </div>
       <div className="mt-2 flex items-center gap-2 rounded-2xl bg-night/5 dark:bg-black/40 py-2 pr-2 pl-4 shadow-[inset_0_1px_0_rgb(255_255_255/0.08)]">

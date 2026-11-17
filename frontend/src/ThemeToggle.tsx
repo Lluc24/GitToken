@@ -1,4 +1,5 @@
-import { setTheme, type Theme, useTheme } from "./theme";
+import { SegmentedControl } from "./SegmentedControl";
+import { setTheme, type Theme, themes, useTheme } from "./theme";
 
 const iconPathsByTheme: Record<Theme, string[]> = {
   light: [
@@ -8,36 +9,38 @@ const iconPathsByTheme: Record<Theme, string[]> = {
   dark: ["M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"],
 };
 
+function ThemeIcon({ theme }: { theme: Theme }) {
+  return (
+    <>
+      <svg
+        viewBox="0 0 24 24"
+        className="size-4"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+      >
+        {iconPathsByTheme[theme].map((path) => (
+          <path key={path} d={path} />
+        ))}
+      </svg>
+      <span className="sr-only">{theme} theme</span>
+    </>
+  );
+}
+
 export function ThemeToggle() {
   const selectedTheme = useTheme();
   return (
-    <fieldset className="flex rounded-full bg-night/10 dark:bg-white/10 p-0.5">
-      <legend className="sr-only">Theme</legend>
-      {(["light", "dark"] as const).map((theme) => (
-        <button
-          key={theme}
-          type="button"
-          aria-label={`${theme} theme`}
-          aria-pressed={theme === selectedTheme}
-          onClick={() => setTheme(theme)}
-          className={`flex size-9 items-center justify-center rounded-full transition-colors sm:size-8 ${theme === selectedTheme ? "bg-night dark:bg-white text-white dark:text-night" : "text-night/60 dark:text-white/60 hover:text-night dark:hover:text-white"}`}
-        >
-          <svg
-            viewBox="0 0 24 24"
-            className="size-4"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
-          >
-            {iconPathsByTheme[theme].map((path) => (
-              <path key={path} d={path} />
-            ))}
-          </svg>
-        </button>
-      ))}
-    </fieldset>
+    <SegmentedControl
+      label="Theme"
+      variant="icon"
+      options={themes}
+      selected={selectedTheme}
+      onSelect={setTheme}
+      renderOption={(theme) => <ThemeIcon theme={theme} />}
+    />
   );
 }
