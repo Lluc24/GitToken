@@ -1,7 +1,7 @@
 import { type FormEvent, useEffect, useId, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { sendProfileSearchBeacon } from "./api";
-import { glassClassName, pressableClassName } from "./glass";
+import { glassClassName, raisedPrimaryActionClassName } from "./glass";
 import { type GithubLogin, parseGithubLogin } from "./login";
 import { searchFocusHash } from "./paths";
 
@@ -68,7 +68,7 @@ export function LoginForm({
         </label>
         <button
           type="submit"
-          className={`shrink-0 whitespace-nowrap rounded-full bg-gradient-to-br from-cyan-300 via-violet-400 to-fuchsia-400 px-5 py-3 font-semibold sm:px-6 text-night shadow-[inset_0_1px_0_rgb(255_255_255/0.7),0_8px_30px_-6px_rgb(167_139_250/0.8)] ${pressableClassName}`}
+          className={`shrink-0 whitespace-nowrap px-5 py-3 sm:px-6 ${raisedPrimaryActionClassName}`}
         >
           {submitLabel}
         </button>

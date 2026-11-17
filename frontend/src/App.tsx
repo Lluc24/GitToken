@@ -14,7 +14,7 @@ import { readConnectedKey, withConnectedKey } from "./badges";
 import { ConnectGithub } from "./ConnectGithub";
 import { ErrorNotice } from "./ErrorNotice";
 import { formatTokens } from "./format";
-import { glassClassName, pressableClassName } from "./glass";
+import { glassClassName, navLinkClassName } from "./glass";
 import { Leaderboard } from "./Leaderboard";
 import { LoginForm } from "./LoginForm";
 import {
@@ -26,6 +26,7 @@ import {
   badgesIndexPath,
   badgesPagePath,
   homePath,
+  leaderboardPath,
   profileCardPath,
   profilePath,
 } from "./paths";
@@ -164,8 +165,8 @@ export function App() {
             className={`flex items-center gap-1 text-sm max-sm:order-last max-sm:w-full max-sm:flex-col max-sm:items-stretch max-sm:pt-2 max-sm:pb-1 max-sm:text-base max-sm:*:py-3 sm:ml-auto ${isMenuOpen ? "" : "max-sm:hidden"}`}
           >
             <Link
-              to="/leaderboard"
-              className={`rounded-full px-4 py-2 text-night/80 dark:text-white/80 hover:bg-night/15 dark:hover:bg-white/15 hover:text-night dark:hover:text-white ${pressableClassName}`}
+              to={leaderboardPath}
+              className={navLinkClassName}
               onClick={() => setIsMenuOpen(false)}
             >
               Leaderboard
@@ -174,7 +175,7 @@ export function App() {
               to={
                 lastLogin === null ? badgesIndexPath : badgesPagePath(lastLogin)
               }
-              className={`rounded-full px-4 py-2 text-night/80 dark:text-white/80 hover:bg-night/15 dark:hover:bg-white/15 hover:text-night dark:hover:text-white ${pressableClassName}`}
+              className={navLinkClassName}
               onClick={() => setIsMenuOpen(false)}
             >
               Badges
@@ -216,7 +217,7 @@ export function App() {
         </header>
         <Routes>
           <Route
-            path="/"
+            path={homePath}
             element={<ProfilePage onViewLogin={setLastLogin} />}
           />
           <Route
@@ -224,7 +225,7 @@ export function App() {
             element={<ProfilePage onViewLogin={setLastLogin} />}
           />
           <Route
-            path="/badges"
+            path={badgesIndexPath}
             element={<BadgesPage onViewLogin={setLastLogin} />}
           />
           <Route
@@ -232,7 +233,7 @@ export function App() {
             element={<BadgesPage onViewLogin={setLastLogin} />}
           />
           <Route
-            path="/leaderboard"
+            path={leaderboardPath}
             element={
               <main className="mx-auto max-w-xl px-4 py-12">
                 <Leaderboard />

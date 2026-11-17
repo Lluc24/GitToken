@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { withConnectedKey } from "./badges";
 import { formatTokens } from "./format";
-import { pressableClassName } from "./glass";
+import { raisedPrimaryActionClassName } from "./glass";
 import type { GithubLogin } from "./login";
 import { badgesPagePath, profileCardPath, profilePath } from "./paths";
 import { type Theme, useTheme } from "./theme";
@@ -101,7 +101,7 @@ export function ShareCard({
       <button
         type="button"
         onClick={share}
-        className={`flex items-center gap-2 rounded-full bg-gradient-to-br from-cyan-300 via-violet-400 to-fuchsia-400 px-6 py-3 font-semibold text-night shadow-[inset_0_1px_0_rgb(255_255_255/0.7),0_8px_30px_-6px_rgb(167_139_250/0.8)] ${pressableClassName}`}
+        className={`flex items-center gap-2 px-6 py-3 ${raisedPrimaryActionClassName}`}
       >
         <svg
           viewBox="0 0 24 24"

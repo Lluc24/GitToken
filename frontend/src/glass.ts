@@ -3,3 +3,9 @@ export const glassClassName =
 
 export const pressableClassName =
   "transition duration-200 ease-[cubic-bezier(0.2,0.9,0.3,1.4)] hover:-translate-y-px hover:scale-103 hover:from-white/95 active:scale-97 motion-reduce:transition-none dark:hover:from-white/25";
+
+export const primaryActionClassName = `rounded-full bg-gradient-to-br from-cyan-300 via-violet-400 to-fuchsia-400 font-semibold text-night ${pressableClassName}`;
+
+export const raisedPrimaryActionClassName = `${primaryActionClassName} shadow-[inset_0_1px_0_rgb(255_255_255/0.7),0_8px_30px_-6px_rgb(167_139_250/0.8)]`;
+
+export const navLinkClassName = `rounded-full px-4 py-2 text-night/80 dark:text-white/80 hover:bg-night/15 dark:hover:bg-white/15 hover:text-night dark:hover:text-white ${pressableClassName}`;

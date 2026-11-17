@@ -1,6 +1,8 @@
 import { useSyncExternalStore } from "react";
 
-export type Theme = "light" | "dark";
+export const themes = ["light", "dark"] as const;
+
+export type Theme = (typeof themes)[number];
 
 const listeners = new Set<() => void>();
 
