@@ -3,6 +3,7 @@ import type { Theme } from "./theme";
 
 export const homePath = "/";
 export const badgesIndexPath = "/badges";
+export const leaderboardPath = "/leaderboard";
 export const searchFocusHash = "#search";
 export const searchFocusPath = `${homePath}${searchFocusHash}`;
 
