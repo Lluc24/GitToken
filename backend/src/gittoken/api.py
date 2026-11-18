@@ -56,6 +56,7 @@ from gittoken.domain import (
     NAME_BY_AGENT,
     Agent,
     GithubAuthorizationCode,
+    GithubLoginKey,
     GithubProfile,
     GithubRequestError,
     InstallationAuthorization,
@@ -68,6 +69,7 @@ from gittoken.domain import (
     ProfileStoreError,
     Rarity,
     VerifiedGithubUsername,
+    login_key,
 )
 from gittoken.github import (
     GithubApiClient,
@@ -177,7 +179,8 @@ async def _finish_lookup(lookup: asyncio.Task[GithubProfile]) -> None:
 
 
 class _ProfileLookups:
-    """Invariant: at most one running lookup per login, so concurrent requests scan once."""
+    """Invariant: at most one running lookup per login in any casing, so concurrent requests
+    scan once."""
 
     def __init__(
         self,
@@ -188,19 +191,18 @@ class _ProfileLookups:
         self._github_client = github_client
         self._supabase_client = supabase_client
         self._github_app = github_app
-        self._running_lookup_by_login: dict[
-            VerifiedGithubUsername, asyncio.Task[GithubProfile]
-        ] = {}
+        self._running_lookup_by_login_key: dict[GithubLoginKey, asyncio.Task[GithubProfile]] = {}
 
     def start_or_join(self, login: VerifiedGithubUsername) -> asyncio.Task[GithubProfile]:
-        if login not in self._running_lookup_by_login:
-            self._running_lookup_by_login[login] = asyncio.create_task(
+        key = login_key(login)
+        if key not in self._running_lookup_by_login_key:
+            self._running_lookup_by_login_key[key] = asyncio.create_task(
                 lookup_profile(self._github_client, self._supabase_client, self._github_app, login)
             )
-            self._running_lookup_by_login[login].add_done_callback(
-                lambda _: self._running_lookup_by_login.pop(login)
+            self._running_lookup_by_login_key[key].add_done_callback(
+                lambda _: self._running_lookup_by_login_key.pop(key)
             )
-        return self._running_lookup_by_login[login]
+        return self._running_lookup_by_login_key[key]
 
 
 async def _badge_response(

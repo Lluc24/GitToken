@@ -26,6 +26,7 @@ from gittoken.domain import (
     ProfileStoreError,
     RepositoryId,
     VerifiedGithubUsername,
+    login_key,
 )
 
 _TIMEOUT_SECONDS = 10
@@ -108,6 +109,7 @@ def _activity_rows(activity_by_day: Mapping[date, DayActivity]) -> list[dict[str
 
 class _User(BaseModel):
     github_id: int
+    login: str = Field(pattern=GITHUB_LOGIN_PATTERN)
     agents: list[_UserAgent]
     activity: list[_DayActivity]
     granted_repository_ids: list[PositiveInt]
@@ -116,10 +118,10 @@ class _User(BaseModel):
 _USER_ROWS = TypeAdapter(list[_User])
 
 
-def _profile_from_user(user: _User, login: VerifiedGithubUsername) -> GithubProfile:
+def _profile_from_user(user: _User) -> GithubProfile:
     return GithubProfile(
         GithubUserId(user.github_id),
-        login,
+        VerifiedGithubUsername(user.login),
         _lines_added_by_agent(user.agents),
         _activity_by_day(user.activity),
         tuple(RepositoryId(repository_id) for repository_id in user.granted_repository_ids),
@@ -129,30 +131,32 @@ def _profile_from_user(user: _User, login: VerifiedGithubUsername) -> GithubProf
 async def fetch_cached_profile(
     supabase_client: SupabaseClient, login: VerifiedGithubUsername, now: datetime
 ) -> GithubProfile | None:
-    """Post: the profile saved in the day before now, or None when there is none."""
+    """Post: the profile saved in the day before now under login in any casing, carrying the
+    casing GitHub gave it, or None when there is none."""
     fresh_since = now - _USER_TTL
     request = supabase_client.build_request(
         "GET",
         "/users",
         params={
-            "select": "github_id,agents,activity,granted_repository_ids",
-            "login": f"eq.{login.lower()}",
+            "select": "github_id,login,agents,activity,granted_repository_ids",
+            "login_key": f"eq.{login_key(login)}",
             "fetched_at": f"gte.{fresh_since.isoformat()}",
         },
     )
     users = _parse_rows(await _send(supabase_client, request), _USER_ROWS)
     if users:
-        return _profile_from_user(users[0], login)
+        return _profile_from_user(users[0])
     return None
 
 
 async def delete_renamed_user(supabase_client: SupabaseClient, profile: GithubProfile) -> None:
-    """Post: no other GitHub id holds this profile's login, which a renamed account may have left."""
+    """Post: no other GitHub id holds this profile's login in any casing, which a renamed account
+    may have left."""
     request = supabase_client.build_request(
         "DELETE",
         "/users",
         params={
-            "login": f"eq.{profile.login.lower()}",
+            "login_key": f"eq.{login_key(profile.login)}",
             "github_id": f"neq.{profile.github_id}",
         },
     )
@@ -170,7 +174,7 @@ async def save_profile(
         params={"on_conflict": "github_id"},
         json={
             "github_id": profile.github_id,
-            "login": profile.login.lower(),
+            "login": profile.login,
             "fetched_at": now.isoformat(),
             "total_tokens": profile.total_tokens,
             "agents": _agent_rows(profile.lines_added_by_agent),
@@ -237,7 +241,7 @@ async def fetch_leaderboard(
         params={
             "select": "login,total_tokens",
             "fetched_at": f"gte.{fresh_since.isoformat()}",
-            "order": "total_tokens.desc,login.asc",
+            "order": "total_tokens.desc,login_key.asc",
             "limit": "50",
         },
     )
