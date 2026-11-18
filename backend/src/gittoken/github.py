@@ -123,6 +123,7 @@ _REPOSITORIES_QUERY = """
 query($login: String!, $cursor: String) {
   user(login: $login) {
     databaseId
+    login
     repositories(first: 100, ownerAffiliations: OWNER, isFork: false, privacy: PUBLIC,
                  orderBy: {field: PUSHED_AT, direction: DESC}, after: $cursor) {
       pageInfo { hasNextPage endCursor }
@@ -180,6 +181,7 @@ class _Repositories(BaseModel):
 
 class _User(BaseModel):
     database_id: int = Field(alias="databaseId")
+    login: str = Field(pattern=GITHUB_LOGIN_PATTERN)
     repositories: _Repositories
 
 
@@ -307,13 +309,15 @@ async def _scan_repository(
 @dataclass(frozen=True)
 class _PublicRepositories:
     github_id: GithubUserId
+    login: VerifiedGithubUsername
     repository_node_ids: tuple[str, ...]
 
 
 async def _fetch_public_repositories(
     github_client: GithubApiClient, login: VerifiedGithubUsername
 ) -> _PublicRepositories:
-    """Post: the account and its public non-fork repositories pushed since 2025."""
+    """Post: the account, with its login in GitHub's casing, and its public non-fork repositories
+    pushed since 2025."""
     repository_node_ids: list[str] = []
     cursor: str | None = None
     seen_cursors: set[str] = set()
@@ -341,7 +345,9 @@ async def _fetch_public_repositories(
             for repository in page.nodes
         ):
             return _PublicRepositories(
-                GithubUserId(data.user.database_id), tuple(repository_node_ids)
+                GithubUserId(data.user.database_id),
+                VerifiedGithubUsername(data.user.login),
+                tuple(repository_node_ids),
             )
         if next_cursor in seen_cursors:
             raise GithubRequestError("GitHub repeated a repository pagination cursor")
@@ -647,18 +653,18 @@ async def fetch_github_profile(
     now: datetime,
 ) -> GithubProfile:
     """Post: the agent commits since 2025 across the account's public non-fork repositories and
-    the private ones it granted to the app, or ProfileNotFoundError. Failed or incomplete GitHub
-    responses raise GithubRequestError."""
+    the private ones it granted to the app, under its login in GitHub's casing, or
+    ProfileNotFoundError. Failed or incomplete GitHub responses raise GithubRequestError."""
     public_repositories = await _fetch_public_repositories(github_client, login)
     public_commits = await _scan_repositories(
         github_client, public_repositories.repository_node_ids, {}
     )
     private_commits = await _fetch_private_commits(
-        github_client, github_app, public_repositories.github_id, login, now
+        github_client, github_app, public_repositories.github_id, public_repositories.login, now
     )
     return profile_from_commits(
         public_repositories.github_id,
-        login,
+        public_repositories.login,
         (*public_commits, *private_commits.commits),
         private_commits.repository_ids,
     )
