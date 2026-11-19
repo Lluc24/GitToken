@@ -8,19 +8,6 @@ export type Badge = {
   readonly path: (login: GithubLogin, theme: Theme) => string;
 };
 
-/** Pre: connectedKey is empty, or the key the GitHub App setup redirect added so the CDN's
- * copy from before the install is skipped. */
-export function withConnectedKey(path: string, connectedKey: string): string {
-  const separator = path.includes("?") ? "&" : "?";
-  return connectedKey === ""
-    ? path
-    : `${path}${separator}connected=${encodeURIComponent(connectedKey)}`;
-}
-
-export function readConnectedKey(searchParams: URLSearchParams): string {
-  return searchParams.get("connected") ?? "";
-}
-
 export const badges: readonly Badge[] = [
   {
     name: "Profile",
