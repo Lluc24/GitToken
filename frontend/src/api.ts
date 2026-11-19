@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { z } from "zod";
-import { withConnectedKey } from "./badges";
 import { type GithubLogin, githubLogin } from "./login";
+import { type ConnectedKey, withConnectedKey } from "./paths";
 
 const rarity = z.enum(["common", "rare", "epic", "legendary", "champion"]);
 
@@ -46,7 +46,7 @@ export type ProfileTokens = {
 
 async function fetchProfileTokens(
   login: GithubLogin,
-  connectedKey: string,
+  connectedKey: ConnectedKey | null,
 ): Promise<ProfileTokens> {
   const response = await fetch(
     withConnectedKey(`/v1/users/${login}`, connectedKey),
@@ -72,7 +72,10 @@ async function fetchProfileTokens(
   };
 }
 
-export function useProfileTokens(login: GithubLogin, connectedKey: string) {
+export function useProfileTokens(
+  login: GithubLogin,
+  connectedKey: ConnectedKey | null,
+) {
   return useQuery({
     queryKey: ["profile-tokens", login, connectedKey],
     queryFn: () => fetchProfileTokens(login, connectedKey),

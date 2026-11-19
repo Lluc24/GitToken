@@ -1,9 +1,8 @@
 import { Link, useSearchParams } from "react-router-dom";
 import { useProfileTokens } from "./api";
-import { readConnectedKey } from "./badges";
 import { pressableClassName } from "./glass";
 import type { GithubLogin } from "./login";
-import { searchFocusPath } from "./paths";
+import { parseConnectedKey, searchFocusPath } from "./paths";
 
 const buttonClassName =
   "flex items-center gap-1.5 rounded-full px-3.5 py-2 font-semibold text-sm";
@@ -46,7 +45,10 @@ function ProfileConnectLink({
   onNavigate: () => void;
 }) {
   const [searchParams] = useSearchParams();
-  const profileTokens = useProfileTokens(login, readConnectedKey(searchParams));
+  const profileTokens = useProfileTokens(
+    login,
+    parseConnectedKey(searchParams),
+  );
   if (profileTokens.isPending) {
     return (
       <button

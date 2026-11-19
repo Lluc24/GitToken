@@ -1,22 +1,27 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { withConnectedKey } from "./badges";
 import { formatTokens } from "./format";
 import { raisedPrimaryActionClassName } from "./glass";
 import type { GithubLogin } from "./login";
-import { badgesPagePath, profileCardPath, profilePath } from "./paths";
+import {
+  badgesPagePath,
+  type ConnectedKey,
+  profileCardPath,
+  profilePath,
+  withConnectedKey,
+} from "./paths";
 import { type Theme, useTheme } from "./theme";
 
 type ShareCardProps = {
   login: GithubLogin;
   totalTokens: number;
-  connectedKey: string;
+  connectedKey: ConnectedKey | null;
 };
 
 async function renderCardPng(
   login: GithubLogin,
   theme: Theme,
-  connectedKey: string,
+  connectedKey: ConnectedKey | null,
 ): Promise<File> {
   const card = new Image();
   card.src = withConnectedKey(profileCardPath(login, theme), connectedKey);

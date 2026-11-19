@@ -10,7 +10,6 @@ import {
 } from "react-router-dom";
 import { useProfileTokens } from "./api";
 import { BadgesPage } from "./BadgesPage";
-import { readConnectedKey, withConnectedKey } from "./badges";
 import { ConnectGithub } from "./ConnectGithub";
 import { ErrorNotice } from "./ErrorNotice";
 import { formatTokens } from "./format";
@@ -25,10 +24,13 @@ import {
 import {
   badgesIndexPath,
   badgesPagePath,
+  type ConnectedKey,
   homePath,
   leaderboardPath,
+  parseConnectedKey,
   profileCardPath,
   profilePath,
+  withConnectedKey,
 } from "./paths";
 import { ShareCard } from "./ShareCard";
 import { ThemeToggle } from "./ThemeToggle";
@@ -39,7 +41,7 @@ function ProfileTokensResult({
   connectedKey,
 }: {
   login: GithubLogin;
-  connectedKey: string;
+  connectedKey: ConnectedKey | null;
 }) {
   const profileTokens = useProfileTokens(login, connectedKey);
   const theme = useTheme();
@@ -108,7 +110,7 @@ function ProfilePage({
         ) : (
           <ProfileTokensResult
             login={login}
-            connectedKey={readConnectedKey(searchParams)}
+            connectedKey={parseConnectedKey(searchParams)}
           />
         ))}
     </main>
