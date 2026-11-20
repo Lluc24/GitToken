@@ -1,3 +1,5 @@
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager, suppress
 from datetime import UTC, date, datetime, timedelta
 from time import perf_counter
 
@@ -50,6 +52,35 @@ def today_utc() -> date:
     return datetime.now(UTC).date()
 
 
+@contextmanager
+def _span(name: str) -> Iterator[None]:
+    with tracer.start_as_current_span(name, record_exception=False, set_status_on_exception=False):
+        yield
+
+
+@contextmanager
+def _logged_failure(
+    event: str, message: str, failures: tuple[type[Exception], ...], **fields: object
+) -> Iterator[Callable[[], float]]:
+    """Post: yields the seconds elapsed since entry; any of failures raised inside is logged as a
+    warning with its type and duration, then re-raised."""
+    started_at = perf_counter()
+
+    def elapsed_seconds() -> float:
+        return perf_counter() - started_at
+
+    try:
+        yield elapsed_seconds
+    except failures as error:
+        logger.bind(
+            event=event,
+            error_type=type(error).__name__,
+            duration_seconds=elapsed_seconds(),
+            **fields,
+        ).warning(message)
+        raise
+
+
 async def lookup_profile(
     github_client: GithubApiClient,
     supabase_client: SupabaseClient,
@@ -58,40 +89,27 @@ async def lookup_profile(
 ) -> GithubProfile:
     """Post: the cached profile, or a fresh scan that also covers the private repositories the
     account granted."""
-    started_at = perf_counter()
     now = datetime.now(UTC)
-    try:
-        with tracer.start_as_current_span(
-            "cache.supabase.read", record_exception=False, set_status_on_exception=False
-        ):
-            profile = await fetch_cached_profile(supabase_client, login, now)
-        cache_hit = profile is not None
-        if profile is None:
-            with tracer.start_as_current_span(
-                "github.scan", record_exception=False, set_status_on_exception=False
-            ):
-                profile = await fetch_github_profile(github_client, github_app, login, now)
-            with tracer.start_as_current_span(
-                "profile.persist", record_exception=False, set_status_on_exception=False
-            ):
-                await delete_renamed_user(supabase_client, profile)
-                await save_profile(supabase_client, profile, now)
-    except ProfileNotFoundError:
-        logger.bind(event="profile_not_found", duration_seconds=perf_counter() - started_at).info(
-            "Profile lookup returned no user"
-        )
-        raise
-    except (GithubRequestError, ProfileStoreError) as error:
-        logger.bind(
-            event="profile_upstream_error",
-            error_type=type(error).__name__,
-            duration_seconds=perf_counter() - started_at,
-        ).warning("Profile lookup failed")
-        raise
+    with _logged_failure(
+        "profile_upstream_error", "Profile lookup failed", (GithubRequestError, ProfileStoreError)
+    ) as elapsed_seconds:
+        try:
+            with _span("cache.supabase.read"):
+                profile = await fetch_cached_profile(supabase_client, login, now)
+            cache_hit = profile is not None
+            if profile is None:
+                with _span("github.scan"):
+                    profile = await fetch_github_profile(github_client, github_app, login, now)
+                with _span("profile.persist"):
+                    await delete_renamed_user(supabase_client, profile)
+                    await save_profile(supabase_client, profile, now)
+        except ProfileNotFoundError:
+            logger.bind(event="profile_not_found", duration_seconds=elapsed_seconds()).info(
+                "Profile lookup returned no user"
+            )
+            raise
     logger.bind(
-        event="profile_lookup",
-        cache_hit=cache_hit,
-        duration_seconds=perf_counter() - started_at,
+        event="profile_lookup", cache_hit=cache_hit, duration_seconds=elapsed_seconds()
     ).info("Profile lookup completed")
     return profile
 
@@ -103,42 +121,30 @@ async def fetch_fresh_leaderboard(supabase_client: SupabaseClient) -> tuple[Lead
 async def fetch_profile_avatar(
     avatar_client: GithubAvatarClient, login: VerifiedGithubUsername
 ) -> Avatar:
-    started_at = perf_counter()
-    try:
-        avatar = await fetch_avatar(avatar_client, login)
-    except GithubRequestError as error:
-        logger.bind(
-            event="avatar_upstream_error",
-            error_type=type(error).__name__,
-            duration_seconds=perf_counter() - started_at,
-        ).warning("Avatar fetch failed")
-        raise
-    return avatar
+    with _logged_failure("avatar_upstream_error", "Avatar fetch failed", (GithubRequestError,)):
+        return await fetch_avatar(avatar_client, login)
 
 
 async def withdraw_consent(supabase_client: SupabaseClient, withdrawal: ConsentWithdrawal) -> None:
     """Post: no saved profile covers the withdrawn private repositories, so the next lookup of each
     affected account rescans it without them. A scan already running when the consent is withdrawn
     can save them again until the account's next rescan."""
-    started_at = perf_counter()
-    try:
+    withdrawal_type = type(withdrawal).__name__
+    with _logged_failure(
+        "consent_withdrawal_error",
+        "Profiles covering withdrawn repositories could not be deleted",
+        (ProfileStoreError,),
+        withdrawal_type=withdrawal_type,
+    ) as elapsed_seconds:
         match withdrawal:
             case AccountDisconnected(github_id):
                 await delete_profile(supabase_client, github_id)
             case RepositoriesRevoked(repository_ids):
                 await delete_profiles_granting(supabase_client, repository_ids)
-    except ProfileStoreError as error:
-        logger.bind(
-            event="consent_withdrawal_error",
-            withdrawal_type=type(withdrawal).__name__,
-            error_type=type(error).__name__,
-            duration_seconds=perf_counter() - started_at,
-        ).warning("Profiles covering withdrawn repositories could not be deleted")
-        raise
     logger.bind(
         event="consent_withdrawn",
-        withdrawal_type=type(withdrawal).__name__,
-        duration_seconds=perf_counter() - started_at,
+        withdrawal_type=withdrawal_type,
+        duration_seconds=elapsed_seconds(),
     ).info("Profiles covering withdrawn repositories deleted")
 
 
@@ -186,12 +192,12 @@ async def report_profile_search(
     """Post: Slack was told about the search, or the failure was logged. The activity feed is
     best effort, so its failure never reaches the visitor; the log leaves out the login, as
     warnings are forwarded to Sentry."""
-    started_at = perf_counter()
-    try:
+    with (
+        suppress(SlackNotificationError),
+        _logged_failure(
+            "slack_activity_error",
+            "Slack activity notification failed",
+            (SlackNotificationError,),
+        ),
+    ):
         await notify_profile_search(slack_client, login)
-    except SlackNotificationError as error:
-        logger.bind(
-            event="slack_activity_error",
-            error_type=str(error),
-            duration_seconds=perf_counter() - started_at,
-        ).warning("Slack activity notification failed")
