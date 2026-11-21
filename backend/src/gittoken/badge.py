@@ -10,6 +10,9 @@ from PIL import Image
 from gittoken.domain import NAME_BY_AGENT, Avatar, DayActivity, GithubProfile
 
 _MAX_ROWS = 2
+_PROFILE_NAME_MAX_LENGTH = 20
+_HEATMAP_NAME_MAX_LENGTH = 24
+_NOTICE_NAME_MAX_LENGTH = 20
 _AVATAR_JPEG_QUALITY = 82
 _HEATMAP_WEEKS = 53
 _DAYS_PER_WEEK = 7
@@ -36,6 +39,11 @@ def _format_tokens(tokens: int) -> str:
             text = f"{tokens / threshold:.1f}".rstrip("0").rstrip(".")
             return f"{text}{suffix}"
     return str(tokens)
+
+
+def _shortened_login(login: str, max_length: int) -> str:
+    """Post: login if it fits in max_length characters, else its start and an ellipsis in max_length."""
+    return login if len(login) <= max_length else f"{login[: max_length - 1]}…"
 
 
 _environment = Environment(
@@ -73,6 +81,7 @@ def _rows(profile: GithubProfile) -> list[_Row]:
 def render_badge(profile: GithubProfile, theme: Theme) -> str:
     return _badge_template.render(
         login=profile.login,
+        description=f"{profile.login}: {profile.total_tokens:,} estimated tokens, {profile.rarity}",
         total_tokens=profile.total_tokens,
         rarity=profile.rarity,
         theme=theme,
@@ -134,15 +143,18 @@ def render_heatmap(profile: GithubProfile, theme: Theme, today: date) -> str:
         for offset, day in enumerate(days)
         if offset % _DAYS_PER_WEEK == 0 and day.day <= _DAYS_PER_WEEK
     ]
+    total_tokens = sum(activity.tokens for activity in daily_activities)
+    commits_text = f"{sum(activity.commits for activity in daily_activities):,} agent commits"
     return _heatmap_template.render(
-        login=profile.login,
+        name=_shortened_login(profile.login, _HEATMAP_NAME_MAX_LENGTH),
+        description=f"{profile.login}: {total_tokens:,} estimated tokens in {commits_text} over the last year",
+        caption=f"tokens across {commits_text} in the last year",
         theme=theme,
         weeks=_HEATMAP_WEEKS,
         days_per_week=_DAYS_PER_WEEK,
         cells=cells,
         month_labels=month_labels,
-        total_tokens=sum(activity.tokens for activity in daily_activities),
-        total_commits=sum(activity.commits for activity in daily_activities),
+        total_tokens=total_tokens,
     )
 
 
@@ -160,7 +172,7 @@ def render_profile_card(profile: GithubProfile, avatar: Avatar, theme: Theme) ->
     agents = ", ".join(f"{row.name} {_format_tokens(row.tokens)}" for row in rows)
     description = f"{profile.login}: {_format_tokens(profile.total_tokens)} estimated tokens, {profile.rarity}"
     return _profile_template.render(
-        login=profile.login,
+        name=_shortened_login(profile.login, _PROFILE_NAME_MAX_LENGTH),
         total_tokens=profile.total_tokens,
         rarity=profile.rarity,
         theme=theme,
@@ -172,14 +184,21 @@ def render_profile_card(profile: GithubProfile, avatar: Avatar, theme: Theme) ->
 
 def render_scanning_card(login: str, theme: Theme) -> str:
     """Post: a placeholder shown while the first scan of a profile is still running."""
-    return _notice_template.render(
-        login=login,
-        message="Scanning public commits, back in a minute",
-        is_pending=True,
-        theme=theme,
+    return _render_notice(
+        login, "Scanning public commits, back in a minute", is_pending=True, theme=theme
     )
 
 
 def render_error_card(login: str, message: str, theme: Theme) -> str:
     """Post: a card explaining why the badge could not be drawn; READMEs show it instead of a broken image."""
-    return _notice_template.render(login=login, message=message, is_pending=False, theme=theme)
+    return _render_notice(login, message, is_pending=False, theme=theme)
+
+
+def _render_notice(login: str, message: str, *, is_pending: bool, theme: Theme) -> str:
+    return _notice_template.render(
+        name=_shortened_login(login, _NOTICE_NAME_MAX_LENGTH),
+        description=f"{login}: {message}",
+        message=message,
+        is_pending=is_pending,
+        theme=theme,
+    )
