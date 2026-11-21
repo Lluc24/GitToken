@@ -5,9 +5,8 @@
 {% set panel_height = rows|length * row_height + 14 if rows else 0 %}
 {% set height = rows_top + panel_height + (14 if rows else 0) %}
 {% set track = width - 2 * padding - 8 %}
-{% set font = "-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif" %}
-{% set mono = "'SF Mono', ui-monospace, Menlo, monospace" %}
 {% from "palette.jinja" import palettes %}
+{% from "card.jinja" import font, mono, rim_gradient, card_fill, card_border %}
 {% set palette = palettes[theme] %}
 {% set color = palette.rarities[rarity] %}
 {% set aria = login ~ ": " ~ "{:,}".format(total_tokens) ~ " estimated tokens, " ~ rarity %}
@@ -18,20 +17,12 @@
       <stop offset="0" stop-color="{{ color[2] }}" stop-opacity="0.22"/>
       <stop offset="0.7" stop-color="{{ color[2] }}" stop-opacity="0"/>
     </linearGradient>
-    <linearGradient id="rim" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="{{ color[1] }}"/>
-      <stop offset="0.5" stop-color="{{ color[2] }}" stop-opacity="0.5"/>
-      <stop offset="1" stop-color="{{ color[3] }}"/>
-    </linearGradient>
-    <linearGradient id="bar" x1="0" y1="0" x2="1" y2="0">
+{{ rim_gradient(color[1:], 0.5) }}    <linearGradient id="bar" x1="0" y1="0" x2="1" y2="0">
       <stop offset="0" stop-color="{{ color[2] }}"/>
       <stop offset="1" stop-color="{{ color[3] }}"/>
     </linearGradient>
   </defs>
-  <rect width="{{ width }}" height="{{ height }}" rx="24" fill="{{ palette.background }}"/>
-  <rect width="{{ width }}" height="{{ height }}" rx="24" fill="url(#tint)"/>
-  <rect x="1" y="1" width="{{ width - 2 }}" height="{{ height - 2 }}" rx="23" fill="none" stroke="url(#rim)" stroke-width="2"/>
-  <text x="{{ padding + 4 }}" y="{{ padding + 22 }}" fill="{{ palette.ink }}" font-family="{{ font }}" font-size="20" font-weight="700" letter-spacing="-0.3">{{ login }}</text>
+{{ card_fill(width, height, palette.background) }}{{ card_fill(width, height, "url(#tint)") }}{{ card_border(width, height) }}  <text x="{{ padding + 4 }}" y="{{ padding + 22 }}" fill="{{ palette.ink }}" font-family="{{ font }}" font-size="20" font-weight="700" letter-spacing="-0.3">{{ login }}</text>
   <text x="{{ padding + 4 }}" y="{{ padding + 42 }}" fill="{{ color[0] }}" font-family="{{ font }}" font-size="10.5" font-weight="600" letter-spacing="3">{{ rarity | upper }}</text>
   <text x="{{ width - padding - 4 }}" y="{{ padding + 32 }}" text-anchor="end" fill="{{ color[0] }}" font-family="{{ font }}" font-size="28" font-weight="700" letter-spacing="-0.5">{{ total_tokens | compact_tokens }}</text>
 {% if rows %}
