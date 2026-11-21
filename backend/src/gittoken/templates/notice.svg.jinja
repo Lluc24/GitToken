@@ -15,8 +15,11 @@
     @media (prefers-reduced-motion: reduce) { .dot { animation: none; opacity: 0.6; } }
   </style>
   <defs>
-{{ rim_gradient(brand_rim_colors, 0.5) }}  </defs>
-{{ card_fill(width, height, palette.background) }}{{ card_border(width, height) }}  <text x="24" y="42" fill="{{ palette.ink }}" font-family="{{ font }}" font-size="20" font-weight="700" letter-spacing="-0.3">{{ name }}</text>
+{{ rim_gradient(brand_rim_colors, 0.5) }}
+  </defs>
+{{ card_fill(width, height, palette.background) }}
+{{ card_border(width, height) }}
+  <text x="24" y="42" fill="{{ palette.ink }}" font-family="{{ font }}" font-size="20" font-weight="700" letter-spacing="-0.3">{{ name }}</text>
   <text x="24" y="66" fill="{{ palette.ink }}" fill-opacity="0.62" font-family="{{ font }}" font-size="12.5">{{ message }}</text>
 {% if is_pending %}
   <g fill="#a78bfa">

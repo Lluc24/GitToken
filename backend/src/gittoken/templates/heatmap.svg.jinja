@@ -14,16 +14,20 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="{{ width }}" height="{{ height }}" viewBox="0 0 {{ width }} {{ height }}" role="img" aria-label="{{ aria }}">
   <title>{{ aria }}</title>
   <defs>
-{{ rim_gradient(brand_rim_colors, 1) }}{% for glow, color, center_x, center_y, radius in (("cyan", "#22d3ee", 0.1, 0, 0.6), ("violet", "#8b5cf6", 0.95, 0.3, 0.55), ("pink", "#e879f9", 0.45, 1.1, 0.6)) %}
+{{ rim_gradient(brand_rim_colors, 1) }}
+{% for glow, color, center_x, center_y, radius in (("cyan", "#22d3ee", 0.1, 0, 0.6), ("violet", "#8b5cf6", 0.95, 0.3, 0.55), ("pink", "#e879f9", 0.45, 1.1, 0.6)) %}
     <radialGradient id="{{ glow }}" cx="{{ center_x }}" cy="{{ center_y }}" r="{{ radius }}">
       <stop offset="0" stop-color="{{ color }}" stop-opacity="{{ palette.heatmap_glow_opacity }}"/>
       <stop offset="1" stop-color="{{ color }}" stop-opacity="0"/>
     </radialGradient>
 {% endfor %}
   </defs>
-{{ card_fill(width, height, palette.background) }}{% for glow in ("cyan", "violet", "pink") %}
-{{ card_fill(width, height, "url(#" ~ glow ~ ")") }}{% endfor %}
-{{ card_border(width, height) }}  <text x="{{ padding }}" y="{{ padding + 18 }}" fill="{{ palette.ink }}" font-family="{{ font }}" font-size="18" font-weight="700" letter-spacing="-0.3">{{ name }}</text>
+{{ card_fill(width, height, palette.background) }}
+{% for glow in ("cyan", "violet", "pink") %}
+{{ card_fill(width, height, "url(#" ~ glow ~ ")") }}
+{% endfor %}
+{{ card_border(width, height) }}
+  <text x="{{ padding }}" y="{{ padding + 18 }}" fill="{{ palette.ink }}" font-family="{{ font }}" font-size="18" font-weight="700" letter-spacing="-0.3">{{ name }}</text>
   <text x="{{ padding }}" y="{{ padding + 38 }}" fill="{{ palette.ink }}" fill-opacity="0.6" font-family="{{ font }}" font-size="11">tokens across {{ "{:,}".format(total_commits) }} agent commits in the last year</text>
   <text x="{{ width - padding }}" y="{{ padding + 22 }}" text-anchor="end" fill="{{ palette.rarities.epic[0] }}" font-family="{{ font }}" font-size="24" font-weight="700" letter-spacing="-0.4">{{ total_tokens | compact_tokens }}</text>
   <g font-family="{{ font }}" font-size="9.5" fill="{{ palette.ink }}" fill-opacity="0.6">
