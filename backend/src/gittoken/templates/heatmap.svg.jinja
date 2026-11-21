@@ -1,5 +1,5 @@
-{% from "palette.jinja" import palettes %}
-{% from "card.jinja" import font, brand_rim_colors, rim_gradient, card_fill, card_border %}
+{% from "palette.jinja" import palettes, brand_rim_colors %}
+{% from "card.jinja" import font, rim_gradient, card_fill, card_border %}
 {% set palette = palettes[theme] %}
 {% set cell_size = 10 %}
 {% set cell_step = 13 %}
@@ -8,12 +8,13 @@
 {% set grid_top = 84 %}
 {% set width = grid_left + weeks * cell_step - (cell_step - cell_size) + padding + 18 %}
 {% set height = grid_top + days_per_week * cell_step - (cell_step - cell_size) + 44 %}
+{% set glows = (("cyan", "#22d3ee", 0.1, 0, 0.6), ("violet", "#8b5cf6", 0.95, 0.3, 0.55), ("pink", "#e879f9", 0.45, 1.1, 0.6)) %}
 {% set legend_left = width - padding - 28 - palette.heatmap_levels|length * cell_step %}
 <svg xmlns="http://www.w3.org/2000/svg" width="{{ width }}" height="{{ height }}" viewBox="0 0 {{ width }} {{ height }}" role="img" aria-label="{{ description }}">
   <title>{{ description }}</title>
   <defs>
-{{ rim_gradient(brand_rim_colors, 1) }}
-{% for glow, color, center_x, center_y, radius in (("cyan", "#22d3ee", 0.1, 0, 0.6), ("violet", "#8b5cf6", 0.95, 0.3, 0.55), ("pink", "#e879f9", 0.45, 1.1, 0.6)) %}
+{{ rim_gradient(brand_rim_colors) }}
+{% for glow, color, center_x, center_y, radius in glows %}
     <radialGradient id="{{ glow }}" cx="{{ center_x }}" cy="{{ center_y }}" r="{{ radius }}">
       <stop offset="0" stop-color="{{ color }}" stop-opacity="{{ palette.heatmap_glow_opacity }}"/>
       <stop offset="1" stop-color="{{ color }}" stop-opacity="0"/>
@@ -21,8 +22,8 @@
 {% endfor %}
   </defs>
 {{ card_fill(width, height, palette.background) }}
-{% for glow in ("cyan", "violet", "pink") %}
-{{ card_fill(width, height, "url(#" ~ glow ~ ")") }}
+{% for glow in glows %}
+{{ card_fill(width, height, "url(#" ~ glow[0] ~ ")") }}
 {% endfor %}
 {{ card_border(width, height) }}
   <text x="{{ padding }}" y="{{ padding + 18 }}" fill="{{ palette.ink }}" font-family="{{ font }}" font-size="18" font-weight="700" letter-spacing="-0.3">{{ name }}</text>

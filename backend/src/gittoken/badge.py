@@ -144,11 +144,11 @@ def render_heatmap(profile: GithubProfile, theme: Theme, today: date) -> str:
         if offset % _DAYS_PER_WEEK == 0 and day.day <= _DAYS_PER_WEEK
     ]
     total_tokens = sum(activity.tokens for activity in daily_activities)
-    total_commits = sum(activity.commits for activity in daily_activities)
+    commits_text = f"{sum(activity.commits for activity in daily_activities):,} agent commits"
     return _heatmap_template.render(
         name=_shortened_login(profile.login, _HEATMAP_NAME_MAX_LENGTH),
-        description=f"{profile.login}: {total_tokens:,} estimated tokens in {total_commits:,} agent commits over the last year",
-        caption=f"tokens across {total_commits:,} agent commits in the last year",
+        description=f"{profile.login}: {total_tokens:,} estimated tokens in {commits_text} over the last year",
+        caption=f"tokens across {commits_text} in the last year",
         theme=theme,
         weeks=_HEATMAP_WEEKS,
         days_per_week=_DAYS_PER_WEEK,
