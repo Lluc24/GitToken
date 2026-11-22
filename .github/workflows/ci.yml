@@ -35,15 +35,10 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync --all-packages --locked
-      - run: uv run ruff format --check
-      - run: uv run ruff check
-      - run: uv run mypy backend/src
+      - run: make check-backend
 
   frontend:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: frontend
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -55,5 +50,5 @@ jobs:
           cache: pnpm
           cache-dependency-path: frontend/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
-      - run: pnpm check
-      - run: pnpm build
+        working-directory: frontend
+      - run: make check-frontend
