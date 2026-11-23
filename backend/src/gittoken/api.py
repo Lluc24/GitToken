@@ -2,7 +2,7 @@ import asyncio
 import logging
 import sys
 from collections.abc import AsyncIterator, Awaitable, Callable
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from typing import Annotated
 from uuid import uuid4
 
@@ -175,7 +175,8 @@ def _badge_error_response(login: str, message: str, theme: Theme) -> Response:
 
 
 async def _finish_lookup(lookup: asyncio.Task[GithubProfile]) -> None:
-    await lookup
+    with suppress(ProfileNotFoundError, GithubRequestError, ProfileStoreError):
+        await lookup
 
 
 class _ProfileLookups:
