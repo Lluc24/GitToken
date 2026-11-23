@@ -135,6 +135,14 @@ GITHUB_LOGIN_PATTERN = "^[A-Za-z0-9][A-Za-z0-9-]{0,38}$"
 # A username that passed the format check at the boundary.
 VerifiedGithubUsername = NewType("VerifiedGithubUsername", str)
 
+# The case-insensitive identity of a login: GitHub treats logins that differ only in case as one.
+GithubLoginKey = NewType("GithubLoginKey", str)
+
+
+def login_key(login: VerifiedGithubUsername) -> GithubLoginKey:
+    return GithubLoginKey(login.lower())
+
+
 # Image bytes that GitHub served with a PNG, JPEG or GIF media type.
 Avatar = NewType("Avatar", bytes)
 
