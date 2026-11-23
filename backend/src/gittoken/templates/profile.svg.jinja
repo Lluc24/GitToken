@@ -1,4 +1,5 @@
 {% from "palette.jinja" import palettes %}
+{% from "card.jinja" import font, mono %}
 {% set palette = palettes[theme] %}
 {% set color = palette.rarities[rarity] %}
 {% set is_iridescent = rarity in ("legendary", "champion") %}
@@ -11,11 +12,8 @@
 {% set label_top = panel_top + panel_height + (24 if rows else 18) %}
 {% set height = label_top + 16 %}
 {% set track = photo_size - 32 %}
-{% set name = login if login|length <= 20 else login[:19] ~ "…" %}
 {# Bold glyphs average about 0.6em, so this keeps the name clear of the total. #}
 {% set name_size = [24, [13, (240 / name|length) | int] | max] | min %}
-{% set font = "-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif" %}
-{% set mono = "'SF Mono', ui-monospace, Menlo, monospace" %}
 <svg xmlns="http://www.w3.org/2000/svg" width="{{ width }}" height="{{ height }}" viewBox="0 0 {{ width }} {{ height }}" role="img" aria-label="{{ description }}">
   <title>{{ description }}</title>
   <style>

@@ -1,0 +1,15 @@
+{% set font = "-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif" %}
+{% set mono = "'SF Mono', ui-monospace, Menlo, monospace" %}
+{% macro rim_gradient(colors, middle_opacity=1) %}
+    <linearGradient id="rim" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="{{ colors[0] }}"/>
+      <stop offset="0.5" stop-color="{{ colors[1] }}"{% if middle_opacity != 1 %} stop-opacity="{{ middle_opacity }}"{% endif %}/>
+      <stop offset="1" stop-color="{{ colors[2] }}"/>
+    </linearGradient>
+{%- endmacro %}
+{% macro card_fill(width, height, fill) %}
+  <rect width="{{ width }}" height="{{ height }}" rx="24" fill="{{ fill }}"/>
+{%- endmacro %}
+{% macro card_border(width, height) %}
+  <rect x="1" y="1" width="{{ width - 2 }}" height="{{ height - 2 }}" rx="23" fill="none" stroke="url(#rim)" stroke-width="2"/>
+{%- endmacro %}
