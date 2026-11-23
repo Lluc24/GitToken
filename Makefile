@@ -1,14 +1,18 @@
-.PHONY: setup check fix dev-web repo-bootstrap
+.PHONY: setup check check-backend check-frontend fix dev-web repo-bootstrap
 
 setup:
 	uv sync --all-packages
 	cd frontend && pnpm install
 	git config core.hooksPath .githooks
 
-check:
+check: check-backend check-frontend
+
+check-backend:
 	uv run ruff format --check
 	uv run ruff check
 	uv run mypy backend/src
+
+check-frontend:
 	cd frontend && pnpm check
 	cd frontend && pnpm build
 
