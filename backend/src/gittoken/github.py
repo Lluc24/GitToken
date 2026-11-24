@@ -191,6 +191,12 @@ class _UserData(BaseModel):
 
 class _GraphqlError(BaseModel):
     message: str
+    type: str | None = None
+    path: tuple[str | int, ...] = ()
+
+    @property
+    def is_missing_user(self) -> bool:
+        return self.type == "NOT_FOUND" and self.path == ("user",)
 
 
 class _GraphqlResponse(BaseModel):
@@ -261,7 +267,7 @@ async def _query(
         result = _GraphqlResponse.model_validate_json(response.content)
     except ValidationError as error:
         raise GithubRequestError("GitHub returned an invalid GraphQL response") from error
-    if result.errors or result.data is None:
+    if any(not error.is_missing_user for error in result.errors) or result.data is None:
         raise GithubRequestError("GitHub could not complete the profile lookup")
     return result.data
 
