@@ -16,20 +16,28 @@ export function scriptableWidgetScript(
 const palette = ${JSON.stringify(palette)};
 const widget = new ListWidget();
 widget.url = ${JSON.stringify(`${origin}${profilePath(login)}`)};
-widget.setPadding(2, 2, 2, 2);
-const card = widget.addStack();
-card.layoutVertically();
+widget.setPadding(0, 0, 0, 0);
+const rim = widget.addStack();
+rim.setPadding(2, 2, 2, 2);
+const card = rim.addStack();
 card.cornerRadius = 20;
-card.setPadding(12, 12, 12, 12);
+card.backgroundColor = themed((theme) => theme.background);
+const content = card.addStack();
+content.layoutVertically();
+content.setPadding(12, 12, 12, 12);
 
-/* Mirrors badge.svg.jinja and card.jinja in backend/src/gittoken/templates. */
+/* Mirrors badge.svg.jinja and card.jinja in backend/src/gittoken/templates. Scriptable gradients cannot follow light
+   and dark mode, so each gradient is a theme-neutral overlay on a Color.dynamic base. */
 function themed(pick, alpha = 1) {
   return Color.dynamic(new Color(pick(palette.palettes.light), alpha), new Color(pick(palette.palettes.dark), alpha));
 }
 
-/* Scriptable gradients take fixed colors, so they follow the appearance at the last refresh. */
-function fixed(pick, alpha = 1) {
-  return new Color(pick(Device.isUsingDarkAppearance() ? palette.palettes.dark : palette.palettes.light), alpha);
+function themeNeutralHex(pick) {
+  const hex = pick(palette.palettes.light);
+  if (hex !== pick(palette.palettes.dark)) {
+    throw new Error("palette.json: " + hex + " must be the same in both themes for a widget gradient");
+  }
+  return hex;
 }
 
 function mixHex(baseHex, overHex, overAlpha) {
@@ -46,16 +54,13 @@ function gradient(colors, locations, endPoint) {
   return linearGradient;
 }
 
-function drawCard(rimColors, tintColor) {
-  widget.backgroundGradient = gradient(
-    [fixed((theme) => rimColors(theme)[0]), fixed((theme) => mixHex(theme.background, rimColors(theme)[1], 0.5)), fixed((theme) => rimColors(theme)[2])],
-    [0, 0.5, 1],
+/* The middle stop is exact per theme; the end stops fade out of it and use one color for both themes. */
+function drawRim(startHex, middleHex, endHex) {
+  widget.backgroundColor = themed((theme) => mixHex(theme.background, middleHex, 0.5));
+  rim.backgroundGradient = gradient(
+    [new Color(startHex, 1), new Color(startHex, 0), new Color(endHex, 0), new Color(endHex, 1)],
+    [0, 0.5, 0.5, 1],
     new Point(1, 1),
-  );
-  card.backgroundGradient = gradient(
-    [fixed((theme) => mixHex(theme.background, tintColor(theme), 0.22)), fixed((theme) => theme.background), fixed((theme) => theme.background)],
-    [0, 0.7, 1],
-    new Point(0, 1),
   );
 }
 
@@ -75,7 +80,8 @@ function addLine(stack, text, font, color) {
   return line;
 }
 
-function addBar(stack, fillWidthPoints, barColors) {
+/* A start color fading out over a dynamic end color draws the same blend as the badge's two-stop bar gradient. */
+function addBar(stack, fillWidthPoints, startHex, endColor) {
   const track = stack.addStack();
   track.size = new Size(${barTrackWidthPoints}, 4);
   track.cornerRadius = 2;
@@ -85,7 +91,10 @@ function addBar(stack, fillWidthPoints, barColors) {
     const fill = track.addStack();
     fill.size = new Size(fillWidthPoints, 4);
     fill.cornerRadius = 2;
-    fill.backgroundGradient = gradient([fixed((theme) => barColors(theme)[0]), fixed((theme) => barColors(theme)[1])], [0, 1], new Point(1, 0));
+    fill.backgroundColor = endColor;
+    const fillStart = fill.addStack();
+    fillStart.size = new Size(fillWidthPoints, 4);
+    fillStart.backgroundGradient = gradient([new Color(startHex, 1), new Color(startHex, 0)], [0, 1], new Point(1, 0));
   }
   track.addSpacer();
 }
@@ -135,11 +144,11 @@ async function loadResponse(url) {
 }
 
 function drawNotice(message) {
-  drawCard(() => palette.brand_rim_colors, (theme) => theme.background);
-  addLine(card, ${JSON.stringify(login)}, Font.boldSystemFont(14), themed((theme) => theme.ink));
-  card.addSpacer(4);
-  addLine(card, message, Font.systemFont(11), themed((theme) => theme.ink, 0.62));
-  card.addSpacer();
+  drawRim(...palette.brand_rim_colors);
+  addLine(content, ${JSON.stringify(login)}, Font.boldSystemFont(14), themed((theme) => theme.ink));
+  content.addSpacer(4);
+  addLine(content, message, Font.systemFont(11), themed((theme) => theme.ink, 0.62));
+  content.addSpacer();
   refreshAfterMinutes(${errorRefreshMinutes});
 }
 
@@ -149,14 +158,18 @@ function drawProfile(user, agents) {
     const nameByAgent = Object.fromEntries(JSON.parse(agents.body.toRawString()).map(({ agent, name }) => [agent, name]));
     const rarityColors = (theme) => theme.rarities[profile.rarity];
     const accent = themed((theme) => rarityColors(theme)[0]);
-    drawCard((theme) => rarityColors(theme).slice(1), (theme) => rarityColors(theme)[2]);
-    addLine(card, profile.login, Font.boldSystemFont(14), themed((theme) => theme.ink));
-    addLine(card, profile.rarity.toUpperCase(), Font.semiboldSystemFont(9), accent);
-    addLine(card, formatTokens(profile.total_tokens), Font.boldSystemFont(22), accent);
-    card.addSpacer();
+    const tintHex = themeNeutralHex((theme) => rarityColors(theme)[2]);
+    /* The rim ends differ by theme and no gradient can follow appearance, so both themes use the light ends. */
+    const [, rimStartHex, , rimEndHex] = rarityColors(palette.palettes.light);
+    drawRim(rimStartHex, tintHex, rimEndHex);
+    content.backgroundGradient = gradient([new Color(tintHex, 0.22), new Color(tintHex, 0), new Color(tintHex, 0)], [0, 0.7, 1], new Point(0, 1));
+    addLine(content, profile.login, Font.boldSystemFont(14), themed((theme) => theme.ink));
+    addLine(content, profile.rarity.toUpperCase(), Font.semiboldSystemFont(9), accent);
+    addLine(content, formatTokens(profile.total_tokens), Font.boldSystemFont(22), accent);
+    content.addSpacer();
     const rows = agentRows(profile, nameByAgent);
     if (rows.length > 0) {
-      const panel = card.addStack();
+      const panel = content.addStack();
       panel.layoutVertically();
       panel.spacing = 2;
       panel.cornerRadius = 10;
@@ -170,7 +183,7 @@ function drawProfile(user, agents) {
         const barLine = panel.addStack();
         barLine.centerAlignContent();
         const fillWidthPoints = profile.total_tokens ? Math.max(4, Math.round((${barTrackWidthPoints} * row.tokens) / profile.total_tokens)) : 0;
-        addBar(barLine, fillWidthPoints, (theme) => rarityColors(theme).slice(2));
+        addBar(barLine, fillWidthPoints, tintHex, themed((theme) => rarityColors(theme)[3]));
         barLine.addSpacer();
         addText(barLine, row.percent + "%", valueFont, valueColor);
       }
