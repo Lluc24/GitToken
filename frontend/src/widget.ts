@@ -1,8 +1,11 @@
+import palette from "../../backend/src/gittoken/templates/palette.json";
 import type { GithubLogin } from "./login";
 import { agentsPath, profilePath, userPath } from "./paths";
 
 const profileRefreshMinutes = 6 * 60;
 const errorRefreshMinutes = 15;
+// The narrowest small widget (141pt) less its rim, card and panel padding, as stacks take sizes in points.
+const barTrackWidthPoints = 96;
 
 /** Post: a Scriptable (https://docs.scriptable.app) script that draws login's tokens, rarity and top agents from the /v1/users and /v1/agents routes. */
 export function scriptableWidgetScript(
@@ -10,18 +13,71 @@ export function scriptableWidgetScript(
   login: GithubLogin,
 ): string {
   return `/* GitToken widget for ${login}. Paste into a new Scriptable script, then add a Scriptable widget that runs it. */
+const palette = ${JSON.stringify(palette)};
 const widget = new ListWidget();
 widget.url = ${JSON.stringify(`${origin}${profilePath(login)}`)};
-widget.backgroundColor = Color.dynamic(new Color("#ffffff"), new Color("#0b0b0f"));
-const textColor = Color.dynamic(new Color("#0b0b0f"), Color.white());
+widget.setPadding(2, 2, 2, 2);
+const card = widget.addStack();
+card.layoutVertically();
+card.cornerRadius = 20;
+card.setPadding(12, 12, 12, 12);
 
-function addText(text, font, opacity) {
-  const line = widget.addText(text);
-  line.font = font;
-  line.textColor = textColor;
-  line.textOpacity = opacity;
-  line.minimumScaleFactor = 0.5;
-  line.lineLimit = 1;
+/* Mirrors badge.svg.jinja and card.jinja in backend/src/gittoken/templates. */
+function themed(pick, alpha = 1) {
+  return Color.dynamic(new Color(pick(palette.palettes.light), alpha), new Color(pick(palette.palettes.dark), alpha));
+}
+
+function mixHex(baseHex, overHex, overAlpha) {
+  const channel = (hex, index) => parseInt(hex.slice(1 + index * 2, 3 + index * 2), 16);
+  return "#" + [0, 1, 2].map((index) => Math.round(channel(baseHex, index) * (1 - overAlpha) + channel(overHex, index) * overAlpha).toString(16).padStart(2, "0")).join("");
+}
+
+function gradient(colors, locations, endPoint) {
+  const linearGradient = new LinearGradient();
+  linearGradient.colors = colors;
+  linearGradient.locations = locations;
+  linearGradient.startPoint = new Point(0, 0);
+  linearGradient.endPoint = endPoint;
+  return linearGradient;
+}
+
+function drawCard(rimColors, tintColor) {
+  widget.backgroundGradient = gradient(
+    [themed((theme) => rimColors(theme)[0]), themed((theme) => mixHex(theme.background, rimColors(theme)[1], 0.5)), themed((theme) => rimColors(theme)[2])],
+    [0, 0.5, 1],
+    new Point(1, 1),
+  );
+  card.backgroundGradient = gradient(
+    [themed((theme) => mixHex(theme.background, tintColor(theme), 0.22)), themed((theme) => theme.background), themed((theme) => theme.background)],
+    [0, 0.7, 1],
+    new Point(0, 1),
+  );
+}
+
+function addLine(stack, text, font, color) {
+  const line = stack.addStack();
+  const lineText = line.addText(text);
+  lineText.font = font;
+  lineText.textColor = color;
+  lineText.minimumScaleFactor = 0.5;
+  lineText.lineLimit = 1;
+  line.addSpacer();
+  return line;
+}
+
+function addBar(stack, fillWidthPoints, barColors) {
+  const track = stack.addStack();
+  track.size = new Size(${barTrackWidthPoints}, 4);
+  track.cornerRadius = 2;
+  track.backgroundColor = themed((theme) => theme.ink, 0.1);
+  /* Scriptable sizes a stack automatically when a dimension is 0. */
+  if (fillWidthPoints > 0) {
+    const fill = track.addStack();
+    fill.size = new Size(fillWidthPoints, 4);
+    fill.cornerRadius = 2;
+    fill.backgroundGradient = gradient([themed((theme) => barColors(theme)[0]), themed((theme) => barColors(theme)[1])], [0, 1], new Point(1, 0));
+  }
+  track.addSpacer();
 }
 
 /* Python's round() and format() round exact halves to even; JavaScript rounds them up. */
@@ -68,27 +124,54 @@ async function loadResponse(url) {
   return { statusCode: request.response.statusCode, body };
 }
 
+function drawNotice(message) {
+  drawCard(() => palette.brand_rim_colors, (theme) => theme.background);
+  addLine(card, ${JSON.stringify(login)}, Font.boldSystemFont(14), themed((theme) => theme.ink));
+  card.addSpacer(4);
+  addLine(card, message, Font.systemFont(11), themed((theme) => theme.ink, 0.62));
+  card.addSpacer();
+  refreshAfterMinutes(${errorRefreshMinutes});
+}
+
 function drawProfile(user, agents) {
   if (user.statusCode === 200 && agents.statusCode === 200) {
     const profile = JSON.parse(user.body.toRawString());
     const nameByAgent = Object.fromEntries(JSON.parse(agents.body.toRawString()).map(({ agent, name }) => [agent, name]));
-    addText(formatTokens(profile.total_tokens), Font.boldSystemFont(30), 1);
-    addText(profile.rarity, Font.mediumSystemFont(13), 0.8);
-    widget.addSpacer();
-    for (const row of agentRows(profile, nameByAgent)) {
-      addText(row.name + " " + formatTokens(row.tokens) + " · " + row.percent + "%", Font.systemFont(11), 0.8);
+    const rarityColors = (theme) => theme.rarities[profile.rarity];
+    const accent = themed((theme) => rarityColors(theme)[0]);
+    drawCard((theme) => rarityColors(theme).slice(1), (theme) => rarityColors(theme)[2]);
+    addLine(card, profile.login, Font.boldSystemFont(14), themed((theme) => theme.ink));
+    addLine(card, profile.rarity.toUpperCase(), Font.semiboldSystemFont(9), accent);
+    addLine(card, formatTokens(profile.total_tokens), Font.boldSystemFont(22), accent);
+    card.addSpacer();
+    const rows = agentRows(profile, nameByAgent);
+    if (rows.length > 0) {
+      const panel = card.addStack();
+      panel.layoutVertically();
+      panel.spacing = 3;
+      panel.cornerRadius = 10;
+      panel.setPadding(6, 8, 6, 8);
+      panel.backgroundColor = themed((theme) => theme.ink, 0.06);
+      for (const row of rows) {
+        const line = addLine(panel, row.name, Font.mediumSystemFont(10), themed((theme) => theme.ink));
+        const value = line.addText(formatTokens(row.tokens) + " · " + row.percent + "%");
+        value.font = Font.regularMonospacedSystemFont(9);
+        value.textColor = themed((theme) => theme.ink, 0.85);
+        value.minimumScaleFactor = 0.5;
+        value.lineLimit = 1;
+        const fillWidthPoints = profile.total_tokens ? Math.max(4, Math.round((${barTrackWidthPoints} * row.tokens) / profile.total_tokens)) : 0;
+        addBar(panel, fillWidthPoints, (theme) => rarityColors(theme).slice(2));
+      }
     }
     refreshAfterMinutes(${profileRefreshMinutes});
   } else {
     const statusCode = user.statusCode === 200 ? agents.statusCode : user.statusCode;
-    addText(user.statusCode === 404 ? "No such GitHub user" : "Couldn't load tokens (HTTP " + statusCode + ")", Font.systemFont(12), 1);
-    refreshAfterMinutes(${errorRefreshMinutes});
+    drawNotice(user.statusCode === 404 ? "No such GitHub user" : "Couldn't load tokens (HTTP " + statusCode + ")");
   }
 }
 
 function drawUnreachable() {
-  addText("Couldn't reach GitToken", Font.systemFont(12), 1);
-  refreshAfterMinutes(${errorRefreshMinutes});
+  drawNotice("Couldn't reach GitToken");
 }
 
 /* The rejection handler covers only the requests, so a bug in drawProfile still surfaces as an error. */
@@ -96,8 +179,6 @@ await Promise.all([
   loadResponse(${JSON.stringify(`${origin}${userPath(login)}`)}),
   loadResponse(${JSON.stringify(`${origin}${agentsPath}`)}),
 ]).then(([user, agents]) => drawProfile(user, agents), drawUnreachable);
-widget.addSpacer();
-addText(${JSON.stringify(`@${login} · GitToken`)}, Font.systemFont(11), 0.6);
 
 if (config.runsInWidget) {
   Script.setWidget(widget);

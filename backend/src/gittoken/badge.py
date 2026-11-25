@@ -1,7 +1,9 @@
+import json
 from base64 import b64encode
 from dataclasses import dataclass
 from datetime import date, timedelta
 from enum import StrEnum
+from importlib.resources import files
 from io import BytesIO
 
 from jinja2 import Environment, PackageLoader, StrictUndefined
@@ -54,6 +56,9 @@ _environment = Environment(
     lstrip_blocks=True,
 )
 _environment.filters["compact_tokens"] = _format_tokens
+_environment.globals["palette_file"] = json.loads(
+    files("gittoken").joinpath("templates/palette.json").read_text(encoding="utf-8")
+)
 _badge_template = _environment.get_template("badge.svg.jinja")
 _profile_template = _environment.get_template("profile.svg.jinja")
 _notice_template = _environment.get_template("notice.svg.jinja")
