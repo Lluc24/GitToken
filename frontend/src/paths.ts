@@ -16,6 +16,10 @@ export function badgesPagePath(login: GithubLogin): string {
   return `${profilePath(login)}/badges`;
 }
 
+export function userPath(login: GithubLogin): string {
+  return `/v1/users/${login}`;
+}
+
 export function avatarUrl(login: GithubLogin): string {
   return `https://avatars.githubusercontent.com/${login}?size=64`;
 }
