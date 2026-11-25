@@ -1,11 +1,10 @@
-import { compactNumberOptions } from "./format";
 import type { GithubLogin } from "./login";
 import { profilePath, userPath } from "./paths";
 
 const profileRefreshMinutes = 6 * 60;
 const errorRefreshMinutes = 15;
 
-/** Post: a Scriptable (https://docs.scriptable.app) script that draws login's tokens and rarity from the /v1/users route. */
+/** Post: a Scriptable (https://docs.scriptable.app) script that draws login's tokens, rarity and top agents from the /v1/users route. */
 export function scriptableWidgetScript(
   origin: string,
   login: GithubLogin,
@@ -25,19 +24,33 @@ function addText(text, font, opacity) {
   line.lineLimit = 1;
 }
 
+/* Matches _format_tokens in backend/src/gittoken/badge.py, so the widget reads like the badge. */
+function formatTokens(tokens) {
+  for (const [threshold, suffix] of [[1e9, "B"], [1e6, "M"], [1e3, "K"]]) {
+    if (tokens >= threshold) {
+      const tenths = Math.floor((tokens * 10 + threshold / 2) / threshold);
+      const whole = Math.floor(tenths / 10);
+      return (tenths % 10 === 0 ? String(whole) : whole + "." + (tenths % 10)) + suffix;
+    }
+  }
+  return String(tokens);
+}
+
 function refreshAfterMinutes(minutes) {
   widget.refreshAfterDate = new Date(Date.now() + minutes * 60 * 1000);
 }
 
-addText("GitToken", Font.semiboldSystemFont(12), 0.6);
-widget.addSpacer();
 try {
   const request = new Request(${JSON.stringify(`${origin}${userPath(login)}`)});
   const profile = await request.loadJSON();
   const statusCode = request.response.statusCode;
   if (statusCode === 200) {
-    addText(new Intl.NumberFormat("en", ${JSON.stringify(compactNumberOptions)}).format(profile.total_tokens), Font.boldSystemFont(34), 1);
-    addText(profile.rarity, Font.mediumSystemFont(14), 1);
+    addText(formatTokens(profile.total_tokens), Font.boldSystemFont(30), 1);
+    addText(profile.rarity, Font.mediumSystemFont(13), 0.8);
+    widget.addSpacer();
+    for (const agent of profile.top_agents) {
+      addText(agent.name + " " + formatTokens(agent.tokens) + " · " + agent.percent + "%", Font.systemFont(11), 0.8);
+    }
     refreshAfterMinutes(${profileRefreshMinutes});
   } else {
     addText(statusCode === 404 ? "No such GitHub user" : "Couldn't load tokens (HTTP " + statusCode + ")", Font.systemFont(12), 1);
@@ -48,7 +61,7 @@ try {
   refreshAfterMinutes(${errorRefreshMinutes});
 }
 widget.addSpacer();
-addText(${JSON.stringify(`@${login}`)}, Font.systemFont(12), 0.6);
+addText(${JSON.stringify(`@${login} · GitToken`)}, Font.systemFont(11), 0.6);
 
 if (config.runsInWidget) {
   Script.setWidget(widget);

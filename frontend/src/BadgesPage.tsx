@@ -25,6 +25,14 @@ type SnippetFormat = (typeof snippetFormats)[number];
 
 const copiedLabelDurationMilliseconds = 2000;
 
+const productionHost = import.meta.env.VERCEL_PROJECT_PRODUCTION_URL;
+
+// Copies from a preview deployment must still point at the origin a phone can reach.
+const widgetOrigin =
+  productionHost === undefined
+    ? window.location.origin
+    : `https://${productionHost}`;
+
 type CopyResult = "copied" | "failed";
 
 // README follows the reader's GitHub theme through <picture>; the others use the site's theme.
@@ -190,7 +198,7 @@ function WidgetSection({ login }: { login: GithubLogin }) {
       </div>
       <SnippetBox
         label="Widget script"
-        text={scriptableWidgetScript(window.location.origin, login)}
+        text={scriptableWidgetScript(widgetOrigin, login)}
         isMultiline={true}
       />
     </section>
