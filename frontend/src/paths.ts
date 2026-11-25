@@ -16,6 +16,8 @@ export function badgesPagePath(login: GithubLogin): string {
   return `${profilePath(login)}/badges`;
 }
 
+export const agentsPath = "/v1/agents";
+
 export function userPath(login: GithubLogin): string {
   return `/v1/users/${login}`;
 }

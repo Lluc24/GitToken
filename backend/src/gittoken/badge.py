@@ -25,7 +25,7 @@ class Theme(StrEnum):
 
 
 @dataclass(frozen=True)
-class AgentRow:
+class _Row:
     mark: str
     name: str
     tokens: int
@@ -36,8 +36,8 @@ class AgentRow:
 def _format_tokens(tokens: int) -> str:
     for threshold, suffix in ((1_000_000_000, "B"), (1_000_000, "M"), (1_000, "K")):
         if tokens >= threshold:
-            whole, tenth = divmod((tokens * 10 + threshold // 2) // threshold, 10)
-            return f"{whole}{suffix}" if tenth == 0 else f"{whole}.{tenth}{suffix}"
+            text = f"{tokens / threshold:.1f}".rstrip("0").rstrip(".")
+            return f"{text}{suffix}"
     return str(tokens)
 
 
@@ -60,12 +60,12 @@ _notice_template = _environment.get_template("notice.svg.jinja")
 _heatmap_template = _environment.get_template("heatmap.svg.jinja")
 
 
-def _row(mark: str, name: str, tokens: int, total_tokens: int) -> AgentRow:
+def _row(mark: str, name: str, tokens: int, total_tokens: int) -> _Row:
     share = tokens / total_tokens if total_tokens else 0
-    return AgentRow(mark=mark, name=name, tokens=tokens, share=share, percent=round(share * 100))
+    return _Row(mark=mark, name=name, tokens=tokens, share=share, percent=round(share * 100))
 
 
-def agent_rows(profile: GithubProfile) -> list[AgentRow]:
+def _rows(profile: GithubProfile) -> list[_Row]:
     """Post: up to two agents by name; beyond that, the top agent plus the rest folded into Others."""
     total_tokens = profile.total_tokens
     rows = [
@@ -85,7 +85,7 @@ def render_badge(profile: GithubProfile, theme: Theme) -> str:
         total_tokens=profile.total_tokens,
         rarity=profile.rarity,
         theme=theme,
-        rows=agent_rows(profile),
+        rows=_rows(profile),
     )
 
 
@@ -168,7 +168,7 @@ def _avatar_data_url(avatar: Avatar) -> str:
 
 def render_profile_card(profile: GithubProfile, avatar: Avatar, theme: Theme) -> str:
     """Post: a self-contained SVG; the avatar is inlined because READMEs block external images."""
-    rows = agent_rows(profile)
+    rows = _rows(profile)
     agents = ", ".join(f"{row.name} {_format_tokens(row.tokens)}" for row in rows)
     description = f"{profile.login}: {_format_tokens(profile.total_tokens)} estimated tokens, {profile.rarity}"
     return _profile_template.render(

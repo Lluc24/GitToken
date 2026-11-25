@@ -43,7 +43,6 @@ from gittoken.application import (
 )
 from gittoken.badge import (
     Theme,
-    agent_rows,
     render_badge,
     render_error_card,
     render_heatmap,
@@ -134,18 +133,11 @@ class ApiSettings(BaseSettings):
         return webhook_url
 
 
-class AgentShareResponse(BaseModel):
-    name: str
-    tokens: int
-    percent: int
-
-
 class ProfileTokensResponse(BaseModel):
     login: str
     total_tokens: int
     rarity: Rarity
     tokens_by_agent: dict[Agent, int]
-    top_agents: list[AgentShareResponse]
     includes_private_repositories: bool
     install_url: str
 
@@ -388,10 +380,6 @@ def create_app() -> FastAPI:
             total_tokens=profile.total_tokens,
             rarity=profile.rarity,
             tokens_by_agent=profile.tokens_by_agent,
-            top_agents=[
-                AgentShareResponse(name=row.name, tokens=row.tokens, percent=row.percent)
-                for row in agent_rows(profile)
-            ],
             includes_private_repositories=profile.includes_private_repositories,
             install_url=github_app_install_url(github_app, profile.github_id),
         )

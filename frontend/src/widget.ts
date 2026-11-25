@@ -1,10 +1,10 @@
 import type { GithubLogin } from "./login";
-import { profilePath, userPath } from "./paths";
+import { agentsPath, profilePath, userPath } from "./paths";
 
 const profileRefreshMinutes = 6 * 60;
 const errorRefreshMinutes = 15;
 
-/** Post: a Scriptable (https://docs.scriptable.app) script that draws login's tokens, rarity and top agents from the /v1/users route. */
+/** Post: a Scriptable (https://docs.scriptable.app) script that draws login's tokens, rarity and top agents from the /v1/users and /v1/agents routes. */
 export function scriptableWidgetScript(
   origin: string,
   login: GithubLogin,
@@ -24,42 +24,78 @@ function addText(text, font, opacity) {
   line.lineLimit = 1;
 }
 
-/* Matches _format_tokens in backend/src/gittoken/badge.py, so the widget reads like the badge. */
+/* Python's round() and format() round exact halves to even; JavaScript rounds them up. */
+function roundHalfEven(value) {
+  const floor = Math.floor(value);
+  const fraction = value - floor;
+  return fraction > 0.5 || (fraction === 0.5 && floor % 2 === 1) ? floor + 1 : floor;
+}
+
+/* Matches _format_tokens in backend/src/gittoken/badge.py. */
 function formatTokens(tokens) {
   for (const [threshold, suffix] of [[1e9, "B"], [1e6, "M"], [1e3, "K"]]) {
     if (tokens >= threshold) {
-      const tenths = Math.floor((tokens * 10 + threshold / 2) / threshold);
-      const whole = Math.floor(tenths / 10);
-      return (tenths % 10 === 0 ? String(whole) : whole + "." + (tenths % 10)) + suffix;
+      const quotient = tokens / threshold;
+      const isTie = Number.isInteger(quotient * 4) && !Number.isInteger(quotient * 2);
+      const text = isTie ? (roundHalfEven(quotient * 10) / 10).toFixed(1) : quotient.toFixed(1);
+      return text.replace(/\\.0$/, "") + suffix;
     }
   }
   return String(tokens);
+}
+
+/* Matches _rows and _MAX_ROWS in backend/src/gittoken/badge.py: tokens_by_agent comes largest first. */
+function agentRows(profile, nameByAgent) {
+  const row = (name, tokens) => ({
+    name,
+    tokens,
+    percent: roundHalfEven((profile.total_tokens ? tokens / profile.total_tokens : 0) * 100),
+  });
+  const rows = Object.entries(profile.tokens_by_agent).map(([agent, tokens]) => row(nameByAgent[agent], tokens));
+  if (rows.length > 2) {
+    return [rows[0], row("Others", rows.slice(1).reduce((sum, other) => sum + other.tokens, 0))];
+  }
+  return rows;
 }
 
 function refreshAfterMinutes(minutes) {
   widget.refreshAfterDate = new Date(Date.now() + minutes * 60 * 1000);
 }
 
-try {
-  const request = new Request(${JSON.stringify(`${origin}${userPath(login)}`)});
-  const profile = await request.loadJSON();
-  const statusCode = request.response.statusCode;
-  if (statusCode === 200) {
+async function loadResponse(url) {
+  const request = new Request(url);
+  const body = await request.load();
+  return { statusCode: request.response.statusCode, body };
+}
+
+function drawProfile(user, agents) {
+  if (user.statusCode === 200 && agents.statusCode === 200) {
+    const profile = JSON.parse(user.body.toRawString());
+    const nameByAgent = Object.fromEntries(JSON.parse(agents.body.toRawString()).map(({ agent, name }) => [agent, name]));
     addText(formatTokens(profile.total_tokens), Font.boldSystemFont(30), 1);
     addText(profile.rarity, Font.mediumSystemFont(13), 0.8);
     widget.addSpacer();
-    for (const agent of profile.top_agents) {
-      addText(agent.name + " " + formatTokens(agent.tokens) + " · " + agent.percent + "%", Font.systemFont(11), 0.8);
+    for (const row of agentRows(profile, nameByAgent)) {
+      addText(row.name + " " + formatTokens(row.tokens) + " · " + row.percent + "%", Font.systemFont(11), 0.8);
     }
     refreshAfterMinutes(${profileRefreshMinutes});
   } else {
-    addText(statusCode === 404 ? "No such GitHub user" : "Couldn't load tokens (HTTP " + statusCode + ")", Font.systemFont(12), 1);
+    const statusCode = user.statusCode === 200 ? agents.statusCode : user.statusCode;
+    addText(user.statusCode === 404 ? "No such GitHub user" : "Couldn't load tokens (HTTP " + statusCode + ")", Font.systemFont(12), 1);
     refreshAfterMinutes(${errorRefreshMinutes});
   }
-} catch (error) {
+}
+
+function drawUnreachable() {
   addText("Couldn't reach GitToken", Font.systemFont(12), 1);
   refreshAfterMinutes(${errorRefreshMinutes});
 }
+
+/* The rejection handler covers only the requests, so a bug in drawProfile still surfaces as an error. */
+await Promise.all([
+  loadResponse(${JSON.stringify(`${origin}${userPath(login)}`)}),
+  loadResponse(${JSON.stringify(`${origin}${agentsPath}`)}),
+]).then(([user, agents]) => drawProfile(user, agents), drawUnreachable);
 widget.addSpacer();
 addText(${JSON.stringify(`@${login} · GitToken`)}, Font.systemFont(11), 0.6);
 
