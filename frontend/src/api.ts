@@ -30,7 +30,6 @@ const profileTokensResponse = z.object({
   login: githubLogin,
   total_tokens: z.number(),
   rarity,
-  tokens_by_agent: z.record(z.string(), z.number()),
   includes_private_repositories: z.boolean(),
   install_url: z.url({ protocol: /^https$/, hostname: /^github\.com$/ }),
 });
@@ -39,7 +38,6 @@ export type ProfileTokens = {
   login: GithubLogin;
   totalTokens: number;
   rarity: Rarity;
-  tokensByAgent: Record<string, number>;
   includesPrivateRepositories: boolean;
   installUrl: string;
 };
@@ -66,7 +64,6 @@ async function fetchProfileTokens(
     login: body.login,
     totalTokens: body.total_tokens,
     rarity: body.rarity,
-    tokensByAgent: body.tokens_by_agent,
     includesPrivateRepositories: body.includes_private_repositories,
     installUrl: body.install_url,
   };
