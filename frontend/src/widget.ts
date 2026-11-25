@@ -4,8 +4,8 @@ import { agentsPath, profilePath, userPath } from "./paths";
 
 const profileRefreshMinutes = 6 * 60;
 const errorRefreshMinutes = 15;
-// The narrowest small widget (141pt) less its rim, card and panel padding, as stacks take sizes in points.
-const barTrackWidthPoints = 96;
+// Leaves room for the percent beside the bar in the narrowest small widget (141pt), as stacks take sizes in points.
+const barTrackWidthPoints = 64;
 
 /** Post: a Scriptable (https://docs.scriptable.app) script that draws login's tokens, rarity and top agents from the /v1/users and /v1/agents routes. */
 export function scriptableWidgetScript(
@@ -27,6 +27,11 @@ function themed(pick, alpha = 1) {
   return Color.dynamic(new Color(pick(palette.palettes.light), alpha), new Color(pick(palette.palettes.dark), alpha));
 }
 
+/* Scriptable gradients take fixed colors, so they follow the appearance at the last refresh. */
+function fixed(pick, alpha = 1) {
+  return new Color(pick(Device.isUsingDarkAppearance() ? palette.palettes.dark : palette.palettes.light), alpha);
+}
+
 function mixHex(baseHex, overHex, overAlpha) {
   const channel = (hex, index) => parseInt(hex.slice(1 + index * 2, 3 + index * 2), 16);
   return "#" + [0, 1, 2].map((index) => Math.round(channel(baseHex, index) * (1 - overAlpha) + channel(overHex, index) * overAlpha).toString(16).padStart(2, "0")).join("");
@@ -43,24 +48,29 @@ function gradient(colors, locations, endPoint) {
 
 function drawCard(rimColors, tintColor) {
   widget.backgroundGradient = gradient(
-    [themed((theme) => rimColors(theme)[0]), themed((theme) => mixHex(theme.background, rimColors(theme)[1], 0.5)), themed((theme) => rimColors(theme)[2])],
+    [fixed((theme) => rimColors(theme)[0]), fixed((theme) => mixHex(theme.background, rimColors(theme)[1], 0.5)), fixed((theme) => rimColors(theme)[2])],
     [0, 0.5, 1],
     new Point(1, 1),
   );
   card.backgroundGradient = gradient(
-    [themed((theme) => mixHex(theme.background, tintColor(theme), 0.22)), themed((theme) => theme.background), themed((theme) => theme.background)],
+    [fixed((theme) => mixHex(theme.background, tintColor(theme), 0.22)), fixed((theme) => theme.background), fixed((theme) => theme.background)],
     [0, 0.7, 1],
     new Point(0, 1),
   );
 }
 
+function addText(stack, text, font, color) {
+  const widgetText = stack.addText(text);
+  widgetText.font = font;
+  widgetText.textColor = color;
+  widgetText.minimumScaleFactor = 0.5;
+  widgetText.lineLimit = 1;
+}
+
 function addLine(stack, text, font, color) {
   const line = stack.addStack();
-  const lineText = line.addText(text);
-  lineText.font = font;
-  lineText.textColor = color;
-  lineText.minimumScaleFactor = 0.5;
-  lineText.lineLimit = 1;
+  line.centerAlignContent();
+  addText(line, text, font, color);
   line.addSpacer();
   return line;
 }
@@ -75,7 +85,7 @@ function addBar(stack, fillWidthPoints, barColors) {
     const fill = track.addStack();
     fill.size = new Size(fillWidthPoints, 4);
     fill.cornerRadius = 2;
-    fill.backgroundGradient = gradient([themed((theme) => barColors(theme)[0]), themed((theme) => barColors(theme)[1])], [0, 1], new Point(1, 0));
+    fill.backgroundGradient = gradient([fixed((theme) => barColors(theme)[0]), fixed((theme) => barColors(theme)[1])], [0, 1], new Point(1, 0));
   }
   track.addSpacer();
 }
@@ -148,19 +158,21 @@ function drawProfile(user, agents) {
     if (rows.length > 0) {
       const panel = card.addStack();
       panel.layoutVertically();
-      panel.spacing = 3;
+      panel.spacing = 2;
       panel.cornerRadius = 10;
-      panel.setPadding(6, 8, 6, 8);
+      panel.setPadding(4, 8, 4, 8);
       panel.backgroundColor = themed((theme) => theme.ink, 0.06);
+      const valueColor = themed((theme) => theme.ink, 0.85);
+      const valueFont = Font.regularMonospacedSystemFont(9);
       for (const row of rows) {
-        const line = addLine(panel, row.name, Font.mediumSystemFont(10), themed((theme) => theme.ink));
-        const value = line.addText(formatTokens(row.tokens) + " · " + row.percent + "%");
-        value.font = Font.regularMonospacedSystemFont(9);
-        value.textColor = themed((theme) => theme.ink, 0.85);
-        value.minimumScaleFactor = 0.5;
-        value.lineLimit = 1;
+        const nameLine = addLine(panel, row.name, Font.mediumSystemFont(10), themed((theme) => theme.ink));
+        addText(nameLine, formatTokens(row.tokens), valueFont, valueColor);
+        const barLine = panel.addStack();
+        barLine.centerAlignContent();
         const fillWidthPoints = profile.total_tokens ? Math.max(4, Math.round((${barTrackWidthPoints} * row.tokens) / profile.total_tokens)) : 0;
-        addBar(panel, fillWidthPoints, (theme) => rarityColors(theme).slice(2));
+        addBar(barLine, fillWidthPoints, (theme) => rarityColors(theme).slice(2));
+        barLine.addSpacer();
+        addText(barLine, row.percent + "%", valueFont, valueColor);
       }
     }
     refreshAfterMinutes(${profileRefreshMinutes});
