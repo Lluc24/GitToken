@@ -28,72 +28,12 @@ const heatmapGapPoints = 1;
 // A month name at 8pt needs about three 5pt week columns.
 const monthLabelMinWeeks = 3;
 
-const presentMethodByFamily: Record<WidgetFamily, string> = {
-  small: "presentSmall",
-  medium: "presentMedium",
-};
-
-/** Post: a Scriptable (https://docs.scriptable.app) script that loads urls, then passes their bodies to the
- * `draw` function that drawSource defines; draw may use every helper below. */
-function widgetScript(
-  badgeName: string,
-  family: WidgetFamily,
-  origin: string,
-  login: GithubLogin,
-  urls: readonly string[],
-  drawSource: string,
-): string {
-  return `/* GitToken ${badgeName} widget for ${login}. Paste into a new Scriptable script, then add a ${family} Scriptable widget that runs it. */
-const palette = ${JSON.stringify(palette)};
-const widgetFamily = ${JSON.stringify(family)};
-const widget = new ListWidget();
-widget.url = ${JSON.stringify(`${origin}${profilePath(login)}`)};
-widget.setPadding(0, 0, 0, 0);
-const rim = widget.addStack();
-rim.setPadding(2, 2, 2, 2);
-const card = rim.addStack();
-card.cornerRadius = 20;
-card.backgroundColor = themed((theme) => theme.background);
-const content = card.addStack();
-content.layoutVertically();
-content.setPadding(12, 12, 12, 12);
-
-/* Mirrors the SVG badges in backend/src/gittoken/templates. Scriptable gradients cannot follow light and dark mode,
-   so each gradient is a theme-neutral overlay on a Color.dynamic base. */
-function themed(pick, alpha = 1) {
-  return Color.dynamic(new Color(pick(palette.palettes.light), alpha), new Color(pick(palette.palettes.dark), alpha));
-}
-
-function themeNeutralHex(pick) {
+const agentPanelSource = `function themeNeutralHex(pick) {
   const hex = pick(palette.palettes.light);
   if (hex !== pick(palette.palettes.dark)) {
     throw new Error("palette.json: " + hex + " must be the same in both themes for a widget gradient");
   }
   return hex;
-}
-
-function mixHex(baseHex, overHex, overAlpha) {
-  const channel = (hex, index) => parseInt(hex.slice(1 + index * 2, 3 + index * 2), 16);
-  return "#" + [0, 1, 2].map((index) => Math.round(channel(baseHex, index) * (1 - overAlpha) + channel(overHex, index) * overAlpha).toString(16).padStart(2, "0")).join("");
-}
-
-function gradient(colors, locations, endPoint) {
-  const linearGradient = new LinearGradient();
-  linearGradient.colors = colors;
-  linearGradient.locations = locations;
-  linearGradient.startPoint = new Point(0, 0);
-  linearGradient.endPoint = endPoint;
-  return linearGradient;
-}
-
-/* The middle stop is exact per theme; the end stops fade out of it and use one color for both themes. */
-function drawRim(startHex, middleHex, middleAlpha, endHex) {
-  widget.backgroundColor = themed((theme) => mixHex(theme.background, middleHex, middleAlpha));
-  rim.backgroundGradient = gradient(
-    [new Color(startHex, 1), new Color(startHex, 0), new Color(endHex, 0), new Color(endHex, 1)],
-    [0, 0.5, 0.5, 1],
-    new Point(1, 1),
-  );
 }
 
 function drawTint(tintHex, topAlpha, fadeEnd) {
@@ -113,22 +53,6 @@ function rarityStyle(rarity) {
   };
 }
 
-function addText(stack, text, font, color) {
-  const widgetText = stack.addText(text);
-  widgetText.font = font;
-  widgetText.textColor = color;
-  widgetText.minimumScaleFactor = 0.5;
-  widgetText.lineLimit = 1;
-}
-
-function addLine(stack, text, font, color) {
-  const line = stack.addStack();
-  line.centerAlignContent();
-  addText(line, text, font, color);
-  line.addSpacer();
-  return line;
-}
-
 /* A start color fading out over a dynamic end color draws the same blend as the badge's two-stop bar gradient. */
 function addBar(stack, fillWidthPoints, startHex, endColor) {
   const track = stack.addStack();
@@ -146,26 +70,6 @@ function addBar(stack, fillWidthPoints, startHex, endColor) {
     fillStart.backgroundGradient = gradient([new Color(startHex, 1), new Color(startHex, 0)], [0, 1], new Point(1, 0));
   }
   track.addSpacer();
-}
-
-/* Python's round() and format() round exact halves to even; JavaScript rounds them up. */
-function roundHalfEven(value) {
-  const floor = Math.floor(value);
-  const fraction = value - floor;
-  return fraction > 0.5 || (fraction === 0.5 && floor % 2 === 1) ? floor + 1 : floor;
-}
-
-/* Matches _format_tokens in backend/src/gittoken/badge.py. */
-function formatTokens(tokens) {
-  for (const [threshold, suffix] of [[1e9, "B"], [1e6, "M"], [1e3, "K"]]) {
-    if (tokens >= threshold) {
-      const quotient = tokens / threshold;
-      const isTie = Number.isInteger(quotient * 4) && !Number.isInteger(quotient * 2);
-      const text = isTie ? (roundHalfEven(quotient * 10) / 10).toFixed(1) : quotient.toFixed(1);
-      return text.replace(/\\.0$/, "") + suffix;
-    }
-  }
-  return String(tokens);
 }
 
 /* Matches _rows and _MAX_ROWS in backend/src/gittoken/badge.py: tokens_by_agent comes largest first. */
@@ -205,6 +109,103 @@ function addAgentPanel(stack, profile, agents, style) {
       addText(barLine, row.percent + "%", valueFont, valueColor);
     }
   }
+}`;
+
+const presentMethodByFamily: Record<WidgetFamily, string> = {
+  small: "presentSmall",
+  medium: "presentMedium",
+};
+
+/** Post: a Scriptable (https://docs.scriptable.app) script that loads urls, then passes their bodies to the
+ * `draw` function that drawSource defines; draw may use the core helpers below and those in helperSources. */
+function widgetScript(
+  badgeName: string,
+  family: WidgetFamily,
+  origin: string,
+  login: GithubLogin,
+  urls: readonly string[],
+  helperSources: readonly string[],
+  drawSource: string,
+): string {
+  return `/* GitToken ${badgeName} widget for ${login}. Paste into a new Scriptable script, then add a ${family} Scriptable widget that runs it. */
+const palette = ${JSON.stringify(palette)};
+const widgetFamily = ${JSON.stringify(family)};
+const widget = new ListWidget();
+widget.url = ${JSON.stringify(`${origin}${profilePath(login)}`)};
+widget.setPadding(0, 0, 0, 0);
+const rim = widget.addStack();
+rim.setPadding(2, 2, 2, 2);
+const card = rim.addStack();
+card.cornerRadius = 20;
+card.backgroundColor = themed((theme) => theme.background);
+const content = card.addStack();
+content.layoutVertically();
+content.setPadding(12, 12, 12, 12);
+
+/* Mirrors the SVG badges in backend/src/gittoken/templates. Scriptable gradients cannot follow light and dark mode,
+   so each gradient is a theme-neutral overlay on a Color.dynamic base. */
+function themed(pick, alpha = 1) {
+  return Color.dynamic(new Color(pick(palette.palettes.light), alpha), new Color(pick(palette.palettes.dark), alpha));
+}
+
+function mixHex(baseHex, overHex, overAlpha) {
+  const channel = (hex, index) => parseInt(hex.slice(1 + index * 2, 3 + index * 2), 16);
+  return "#" + [0, 1, 2].map((index) => Math.round(channel(baseHex, index) * (1 - overAlpha) + channel(overHex, index) * overAlpha).toString(16).padStart(2, "0")).join("");
+}
+
+function gradient(colors, locations, endPoint) {
+  const linearGradient = new LinearGradient();
+  linearGradient.colors = colors;
+  linearGradient.locations = locations;
+  linearGradient.startPoint = new Point(0, 0);
+  linearGradient.endPoint = endPoint;
+  return linearGradient;
+}
+
+/* The middle stop is exact per theme; the end stops fade out of it and use one color for both themes. */
+function drawRim(startHex, middleHex, middleAlpha, endHex) {
+  widget.backgroundColor = themed((theme) => mixHex(theme.background, middleHex, middleAlpha));
+  rim.backgroundGradient = gradient(
+    [new Color(startHex, 1), new Color(startHex, 0), new Color(endHex, 0), new Color(endHex, 1)],
+    [0, 0.5, 0.5, 1],
+    new Point(1, 1),
+  );
+}
+
+function addText(stack, text, font, color) {
+  const widgetText = stack.addText(text);
+  widgetText.font = font;
+  widgetText.textColor = color;
+  widgetText.minimumScaleFactor = 0.5;
+  widgetText.lineLimit = 1;
+}
+
+function addLine(stack, text, font, color) {
+  const line = stack.addStack();
+  line.centerAlignContent();
+  addText(line, text, font, color);
+  line.addSpacer();
+  return line;
+}
+
+/* Python's round() and format() round exact halves to even; JavaScript rounds them up. */
+function roundHalfEven(value) {
+  const floor = Math.floor(value);
+  const fraction = value - floor;
+  return fraction > 0.5 || (fraction === 0.5 && floor % 2 === 1) ? floor + 1 : floor;
+}
+
+/* Matches _format_tokens in backend/src/gittoken/badge.py. */
+function formatTokens(tokens) {
+  for (const [threshold, suffix] of [[1e9, "B"], [1e6, "M"], [1e3, "K"]]) {
+    if (tokens >= threshold) {
+      const quotient = tokens / threshold;
+      const isTie = Number.isInteger(quotient * 4) && !Number.isInteger(quotient * 2);
+      const text = isTie ? (roundHalfEven(quotient * 10) / 10).toFixed(1) : quotient.toFixed(1);
+      return text.replace(/\\.0$/, "") + suffix;
+    }
+  }
+  return String(tokens);
 }
 
 function refreshAfterMinutes(minutes) {
@@ -245,6 +246,8 @@ function drawUnreachable() {
   drawNotice("Couldn't reach GitToken");
 }
 
+${helperSources.join("\n\n")}
+
 ${drawSource}
 
 /* config.widgetFamily is undefined when the script runs in the app, which previews the intended size. A small
@@ -275,6 +278,7 @@ export const cardWidget: Widget = {
       origin,
       login,
       [`${origin}${userPath(login)}`, `${origin}${agentsPath}`],
+      [agentPanelSource],
       `function draw(userBody, agentsBody) {
   const profile = parseJSON(userBody);
   const style = rarityStyle(profile.rarity);
@@ -303,6 +307,7 @@ export const profileWidget: Widget = {
         `${origin}${agentsPath}`,
         avatarUrl(login, avatarSizePixels),
       ],
+      [agentPanelSource],
       `/* Iridescent rims are the ring of profile.svg.jinja, without its spin. */
 function drawProfileRim(rarity, style) {
   if (palette.iridescent_rarities.includes(rarity)) {
@@ -349,6 +354,7 @@ export const activityWidget: Widget = {
       origin,
       login,
       [`${origin}${activityPath(login)}`],
+      [],
       `const heatmapStepPoints = ${heatmapCellPoints + heatmapGapPoints};
 const daysPerWeek = 7;
 
@@ -357,19 +363,41 @@ function groupThousands(count) {
   return String(count).replace(/\\B(?=(\\d{3})+(?!\\d))/g, ",");
 }
 
-function levelColor(level) {
-  const [lightHex, lightOpacity] = palette.palettes.light.heatmap_levels[level];
-  const [darkHex, darkOpacity] = palette.palettes.dark.heatmap_levels[level];
-  return Color.dynamic(new Color(lightHex, Number(lightOpacity)), new Color(darkHex, Number(darkOpacity)));
+/* Dynamic colors are not supported in DrawContext (https://docs.scriptable.app/color/#dynamic), so cells are drawn in
+   colors that read on both themes: the dark palette's saturated levels, and for empty days a grey whose opacity puts
+   it within a step of both palettes' empty cell over their backgrounds. */
+const levelColors = [
+  new Color("#a1a1a1", 0.13),
+  ...palette.palettes.dark.heatmap_levels.slice(1).map(([hex, opacity]) => new Color(hex, Number(opacity))),
+];
+
+function cellsSize(columns) {
+  const rows = Math.max(...columns.map((levels) => levels.length));
+  return new Size(columns.length * heatmapStepPoints - ${heatmapGapPoints}, rows * heatmapStepPoints - ${heatmapGapPoints});
 }
 
-function addCell(stack, level) {
-  const cell = stack.addStack();
-  cell.size = new Size(${heatmapCellPoints}, ${heatmapCellPoints});
-  cell.cornerRadius = 1;
-  cell.backgroundColor = levelColor(level);
-  cell.borderWidth = 0.5;
-  cell.borderColor = themed((theme) => theme.ink, 0.06);
+/* One image for the whole grid keeps the widget to a few dozen views; a stack per cell would be several hundred. */
+function cellsImage(columns, size) {
+  const context = new DrawContext();
+  context.size = size;
+  context.opaque = false;
+  context.respectScreenScale = true;
+  columns.forEach((levels, week) => {
+    levels.forEach((level, weekday) => {
+      const path = new Path();
+      path.addRoundedRect(new Rect(week * heatmapStepPoints, weekday * heatmapStepPoints, ${heatmapCellPoints}, ${heatmapCellPoints}), 1, 1);
+      context.addPath(path);
+      context.setFillColor(levelColors[level]);
+      context.fillPath();
+    });
+  });
+  return context.getImage();
+}
+
+function addCells(stack, columns) {
+  const size = cellsSize(columns);
+  const image = stack.addImage(cellsImage(columns, size));
+  image.imageSize = size;
 }
 
 /* A label too close to the grid's right edge to fit is left out, as its month has barely started. */
@@ -380,7 +408,8 @@ function addMonthLabels(stack, monthLabels, weeks, labelColor) {
   }
   monthLabels.forEach((label, index) => {
     const nextWeek = index + 1 < monthLabels.length ? monthLabels[index + 1].week : weeks;
-    const slotWidthPoints = (nextWeek - label.week) * heatmapStepPoints;
+    /* The grid's last column has no gap after it, so the last slot ends one gap earlier. */
+    const slotWidthPoints = (nextWeek - label.week) * heatmapStepPoints - (nextWeek === weeks ? ${heatmapGapPoints} : 0);
     if (nextWeek - label.week >= ${monthLabelMinWeeks}) {
       const slot = labels.addStack();
       slot.size = new Size(slotWidthPoints, 10);
@@ -390,18 +419,6 @@ function addMonthLabels(stack, monthLabels, weeks, labelColor) {
       labels.addSpacer(slotWidthPoints);
     }
   });
-}
-
-function addGrid(stack, levels) {
-  const grid = stack.addStack();
-  grid.topAlignContent();
-  grid.spacing = ${heatmapGapPoints};
-  for (let week = 0; week * daysPerWeek < levels.length; week += 1) {
-    const column = grid.addStack();
-    column.layoutVertically();
-    column.spacing = ${heatmapGapPoints};
-    levels.slice(week * daysPerWeek, (week + 1) * daysPerWeek).forEach((level) => addCell(column, level));
-  }
 }
 
 /* Scriptable has no radial gradient, so the badge's three glows become one diagonal overlay, at half the light
@@ -415,24 +432,28 @@ function draw(activityBody) {
   const labelColor = themed((theme) => theme.ink, 0.6);
   const header = content.addStack();
   header.centerAlignContent();
-  const title = header.addStack();
-  title.layoutVertically();
-  addText(title, ${JSON.stringify(login)}, Font.boldSystemFont(14), themed((theme) => theme.ink));
-  addText(title, "tokens across " + groupThousands(activity.agent_commits) + " agent commits in the last year", Font.systemFont(9), labelColor);
+  addText(header, ${JSON.stringify(login)}, Font.boldSystemFont(14), themed((theme) => theme.ink));
   header.addSpacer();
   addText(header, formatTokens(activity.total_tokens), Font.boldSystemFont(20), themed((theme) => theme.rarities.epic[0]));
+  addLine(content, "tokens across " + groupThousands(activity.agent_commits) + " agent commits in the last year", Font.systemFont(9), labelColor);
   content.addSpacer();
-  addMonthLabels(content, activity.month_labels, Math.ceil(activity.levels.length / daysPerWeek), labelColor);
-  content.addSpacer(2);
-  addGrid(content, activity.levels);
-  content.addSpacer(6);
+  const heatmapRow = content.addStack();
+  heatmapRow.addSpacer();
+  const heatmapBlock = heatmapRow.addStack();
+  heatmapBlock.layoutVertically();
+  heatmapBlock.spacing = 2;
+  const weekColumns = Array.from({ length: Math.ceil(activity.levels.length / daysPerWeek) }, (_, week) => activity.levels.slice(week * daysPerWeek, (week + 1) * daysPerWeek));
+  addMonthLabels(heatmapBlock, activity.month_labels, weekColumns.length, labelColor);
+  addCells(heatmapBlock, weekColumns);
+  heatmapRow.addSpacer();
+  content.addSpacer();
   const legend = content.addStack();
   legend.centerAlignContent();
   legend.spacing = 2;
   addText(legend, "GitToken", Font.systemFont(8), labelColor);
   legend.addSpacer();
   addText(legend, "Less", Font.systemFont(8), labelColor);
-  palette.palettes.light.heatmap_levels.forEach((_, level) => addCell(legend, level));
+  addCells(legend, levelColors.map((_, level) => [level]));
   addText(legend, "More", Font.systemFont(8), labelColor);
 }`,
     ),
