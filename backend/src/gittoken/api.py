@@ -48,6 +48,7 @@ from gittoken.badge import (
     render_heatmap,
     render_profile_card,
     render_scanning_card,
+    render_wide_profile_card,
 )
 from gittoken.db import SupabaseClient, create_supabase_client
 from gittoken.domain import (
@@ -69,6 +70,7 @@ from gittoken.domain import (
     ProfileStoreError,
     Rarity,
     VerifiedGithubUsername,
+    heatmap,
     login_key,
 )
 from gittoken.github import (
@@ -142,6 +144,22 @@ class ProfileTokensResponse(BaseModel):
     install_url: str
 
 
+class MonthLabelResponse(BaseModel):
+    week: int
+    name: str
+
+
+class ActivityResponse(BaseModel):
+    """Levels run one per day from the Sunday that starts the 53-week window up to today (UTC), so day i sits in
+    week column i // 7 and weekday row i % 7; 0 is no agent commits and 1 to 4 are the quartiles of tokens on
+    active days. A month label's week is the column of the first Sunday in that month."""
+
+    total_tokens: int
+    agent_commits: int
+    levels: list[Annotated[int, Field(ge=0, le=4)]]
+    month_labels: list[MonthLabelResponse]
+
+
 class ProfileSearchEvent(BaseModel):
     login: Annotated[VerifiedGithubUsername, Field(pattern=GITHUB_LOGIN_PATTERN)]
 
@@ -160,6 +178,21 @@ class AgentResponse(BaseModel):
 class RarityResponse(BaseModel):
     rarity: Rarity
     min_tokens: int
+
+
+async def _profile_or_http_error(lookup: asyncio.Task[GithubProfile]) -> GithubProfile:
+    try:
+        return await asyncio.shield(lookup)
+    except ProfileNotFoundError as error:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND, str(error), headers={"Cache-Control": "no-store"}
+        ) from error
+    except (GithubRequestError, ProfileStoreError) as error:
+        raise HTTPException(
+            status.HTTP_502_BAD_GATEWAY,
+            "Profile lookup unavailable",
+            headers={"Cache-Control": "no-store"},
+        ) from error
 
 
 def _svg_response(svg: str, cache_control: str) -> Response:
@@ -362,18 +395,7 @@ def create_app() -> FastAPI:
         login: Annotated[VerifiedGithubUsername, Path(pattern=GITHUB_LOGIN_PATTERN)],
         response: Response,
     ) -> ProfileTokensResponse:
-        try:
-            profile = await asyncio.shield(profile_lookups.start_or_join(login))
-        except ProfileNotFoundError as error:
-            raise HTTPException(
-                status.HTTP_404_NOT_FOUND, str(error), headers={"Cache-Control": "no-store"}
-            ) from error
-        except (GithubRequestError, ProfileStoreError) as error:
-            raise HTTPException(
-                status.HTTP_502_BAD_GATEWAY,
-                "Profile lookup unavailable",
-                headers={"Cache-Control": "no-store"},
-            ) from error
+        profile = await _profile_or_http_error(profile_lookups.start_or_join(login))
         response.headers["Cache-Control"] = _DAILY_CACHE_CONTROL
         return ProfileTokensResponse(
             login=profile.login,
@@ -382,6 +404,24 @@ def create_app() -> FastAPI:
             tokens_by_agent=profile.tokens_by_agent,
             includes_private_repositories=profile.includes_private_repositories,
             install_url=github_app_install_url(github_app, profile.github_id),
+        )
+
+    @app.get("/v1/users/{login}/activity")
+    async def get_user_activity(
+        login: Annotated[VerifiedGithubUsername, Path(pattern=GITHUB_LOGIN_PATTERN)],
+        response: Response,
+    ) -> ActivityResponse:
+        profile = await _profile_or_http_error(profile_lookups.start_or_join(login))
+        activity_heatmap = heatmap(profile, today_utc())
+        response.headers["Cache-Control"] = _DAILY_CACHE_CONTROL
+        return ActivityResponse(
+            total_tokens=activity_heatmap.total_tokens,
+            agent_commits=activity_heatmap.agent_commits,
+            levels=[cell.level for cell in activity_heatmap.cells],
+            month_labels=[
+                MonthLabelResponse(week=label.week, name=label.name)
+                for label in activity_heatmap.month_labels
+            ],
         )
 
     _add_profile_search_route(app, slack_client)
@@ -412,6 +452,24 @@ def create_app() -> FastAPI:
         async def render_card(profile: GithubProfile) -> str:
             avatar = await fetch_profile_avatar(avatar_client, login)
             return render_profile_card(profile, avatar, theme)
+
+        return await _badge_response(
+            login,
+            theme,
+            profile_lookups.start_or_join(login),
+            background_tasks,
+            render_card,
+        )
+
+    @app.get("/v1/badges/{login}/wide-profile.svg")
+    async def get_wide_profile_card(
+        login: Annotated[VerifiedGithubUsername, Path(pattern=GITHUB_LOGIN_PATTERN)],
+        background_tasks: BackgroundTasks,
+        theme: Theme = Theme.DARK,
+    ) -> Response:
+        async def render_card(profile: GithubProfile) -> str:
+            avatar = await fetch_profile_avatar(avatar_client, login)
+            return render_wide_profile_card(profile, avatar, theme)
 
         return await _badge_response(
             login,

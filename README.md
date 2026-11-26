@@ -33,7 +33,9 @@ The same data is drawn as SVG cards from Jinja templates, for the site and for R
 | Route | What |
 | --- | --- |
 | `GET /v1/users/{login}` | Total and per-agent tokens, rarity, and the link that installs the GitHub App on that account |
+| `GET /v1/users/{login}/activity` | One shade level per day of the last 53 weeks, for the activity widget |
 | `GET /v1/badges/{login}/profile.svg` | Profile card with the GitHub avatar inlined |
+| `GET /v1/badges/{login}/wide-profile.svg` | The same card with the photo on the left |
 | `GET /v1/badges/{login}.svg` | Card without the photo |
 | `GET /v1/badges/{login}/activity.svg` | A year of agent commits by day, shaded by tokens |
 | `GET /v1/leaderboard` | Profiles scanned in the last day |

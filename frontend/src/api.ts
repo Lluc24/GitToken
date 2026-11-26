@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { z } from "zod";
 import { type GithubLogin, githubLogin } from "./login";
-import { type ConnectedKey, withConnectedKey } from "./paths";
+import { type ConnectedKey, userPath, withConnectedKey } from "./paths";
 
 const rarity = z.enum(["common", "rare", "epic", "legendary", "champion"]);
 
@@ -46,9 +46,7 @@ async function fetchProfileTokens(
   login: GithubLogin,
   connectedKey: ConnectedKey | null,
 ): Promise<ProfileTokens> {
-  const response = await fetch(
-    withConnectedKey(`/v1/users/${login}`, connectedKey),
-  );
+  const response = await fetch(withConnectedKey(userPath(login), connectedKey));
   if (response.status === 404) {
     throw new Error(`No GitHub user named ${login}`);
   }

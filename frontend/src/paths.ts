@@ -16,12 +16,28 @@ export function badgesPagePath(login: GithubLogin): string {
   return `${profilePath(login)}/badges`;
 }
 
-export function avatarUrl(login: GithubLogin): string {
-  return `https://avatars.githubusercontent.com/${login}?size=64`;
+export const agentsPath = "/v1/agents";
+
+export function userPath(login: GithubLogin): string {
+  return `/v1/users/${login}`;
+}
+
+export function activityPath(login: GithubLogin): string {
+  return `${userPath(login)}/activity`;
+}
+
+export const listAvatarSizePixels = 64;
+
+export function avatarUrl(login: GithubLogin, sizePixels: number): string {
+  return `https://avatars.githubusercontent.com/${login}?size=${sizePixels}`;
 }
 
 export function profileCardPath(login: GithubLogin, theme: Theme): string {
   return `/v1/badges/${login}/profile.svg?theme=${theme}`;
+}
+
+export function wideProfileCardPath(login: GithubLogin, theme: Theme): string {
+  return `/v1/badges/${login}/wide-profile.svg?theme=${theme}`;
 }
 
 export function badgeCardPath(login: GithubLogin, theme: Theme): string {

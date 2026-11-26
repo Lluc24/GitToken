@@ -1,22 +1,28 @@
+import json
 from base64 import b64encode
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date
 from enum import StrEnum
+from importlib.resources import files
 from io import BytesIO
 
-from jinja2 import Environment, PackageLoader, StrictUndefined
+from jinja2 import Environment, PackageLoader, StrictUndefined, Template
 from PIL import Image
 
-from gittoken.domain import NAME_BY_AGENT, Avatar, DayActivity, GithubProfile
+from gittoken.domain import (
+    DAYS_PER_WEEK,
+    HEATMAP_WEEKS,
+    NAME_BY_AGENT,
+    Avatar,
+    GithubProfile,
+    heatmap,
+)
 
 _MAX_ROWS = 2
 _PROFILE_NAME_MAX_LENGTH = 20
 _HEATMAP_NAME_MAX_LENGTH = 24
 _NOTICE_NAME_MAX_LENGTH = 20
 _AVATAR_JPEG_QUALITY = 82
-_HEATMAP_WEEKS = 53
-_DAYS_PER_WEEK = 7
-_NO_ACTIVITY = DayActivity(0, 0)
 
 
 class Theme(StrEnum):
@@ -54,8 +60,12 @@ _environment = Environment(
     lstrip_blocks=True,
 )
 _environment.filters["compact_tokens"] = _format_tokens
+_environment.globals["palette_file"] = json.loads(
+    files("gittoken").joinpath("templates/palette.json").read_text(encoding="utf-8")
+)
 _badge_template = _environment.get_template("badge.svg.jinja")
 _profile_template = _environment.get_template("profile.svg.jinja")
+_wide_profile_template = _environment.get_template("wide_profile.svg.jinja")
 _notice_template = _environment.get_template("notice.svg.jinja")
 _heatmap_template = _environment.get_template("heatmap.svg.jinja")
 
@@ -89,72 +99,19 @@ def render_badge(profile: GithubProfile, theme: Theme) -> str:
     )
 
 
-@dataclass(frozen=True)
-class _HeatmapCell:
-    week: int
-    weekday: int
-    level: int
-
-
-@dataclass(frozen=True)
-class _MonthLabel:
-    week: int
-    name: str
-
-
-def _activity_level(activity: DayActivity, quartile_tokens: tuple[int, ...]) -> int:
-    """Pre: quartile_tokens are the quartiles of the window's tokens on days with agent commits.
-    Post: 0 for a day without agent commits, else 1 to 4 by quartile, as GitHub shades its graph."""
-    level = 0
-    if activity.commits:
-        level = 1 + sum(activity.tokens > quartile for quartile in quartile_tokens)
-    return level
-
-
-def _quartile_tokens(daily_activities: list[DayActivity]) -> tuple[int, ...]:
-    """Post: the first, second and third quartiles of tokens on days with agent commits; empty
-    if there are none."""
-    active_tokens = sorted(activity.tokens for activity in daily_activities if activity.commits)
-    quartiles: tuple[int, ...] = ()
-    if active_tokens:
-        quartiles = tuple(active_tokens[len(active_tokens) * quarter // 4] for quarter in (1, 2, 3))
-    return quartiles
-
-
 def render_heatmap(profile: GithubProfile, theme: Theme, today: date) -> str:
-    """Post: a grid of the 53 weeks up to today, Sunday first, each day shaded by its tokens."""
-    first_day = today - timedelta(
-        days=(today.weekday() + 1) % _DAYS_PER_WEEK + _DAYS_PER_WEEK * (_HEATMAP_WEEKS - 1)
-    )
-    days = [first_day + timedelta(days=offset) for offset in range((today - first_day).days + 1)]
-    activity_by_day = profile.activity_by_day
-    daily_activities = [activity_by_day.get(day, _NO_ACTIVITY) for day in days]
-    quartile_tokens = _quartile_tokens(daily_activities)
-    cells = [
-        _HeatmapCell(
-            offset // _DAYS_PER_WEEK,
-            offset % _DAYS_PER_WEEK,
-            _activity_level(activity, quartile_tokens),
-        )
-        for offset, activity in enumerate(daily_activities)
-    ]
-    month_labels = [
-        _MonthLabel(offset // _DAYS_PER_WEEK, day.strftime("%b"))
-        for offset, day in enumerate(days)
-        if offset % _DAYS_PER_WEEK == 0 and day.day <= _DAYS_PER_WEEK
-    ]
-    total_tokens = sum(activity.tokens for activity in daily_activities)
-    commits_text = f"{sum(activity.commits for activity in daily_activities):,} agent commits"
+    activity_heatmap = heatmap(profile, today)
+    commits_text = f"{activity_heatmap.agent_commits:,} agent commits"
     return _heatmap_template.render(
         name=_shortened_login(profile.login, _HEATMAP_NAME_MAX_LENGTH),
-        description=f"{profile.login}: {total_tokens:,} estimated tokens in {commits_text} over the last year",
+        description=f"{profile.login}: {activity_heatmap.total_tokens:,} estimated tokens in {commits_text} over the last year",
         caption=f"tokens across {commits_text} in the last year",
         theme=theme,
-        weeks=_HEATMAP_WEEKS,
-        days_per_week=_DAYS_PER_WEEK,
-        cells=cells,
-        month_labels=month_labels,
-        total_tokens=total_tokens,
+        weeks=HEATMAP_WEEKS,
+        days_per_week=DAYS_PER_WEEK,
+        cells=activity_heatmap.cells,
+        month_labels=activity_heatmap.month_labels,
+        total_tokens=activity_heatmap.total_tokens,
     )
 
 
@@ -166,12 +123,14 @@ def _avatar_data_url(avatar: Avatar) -> str:
     return f"data:image/jpeg;base64,{b64encode(jpeg.getvalue()).decode()}"
 
 
-def render_profile_card(profile: GithubProfile, avatar: Avatar, theme: Theme) -> str:
+def _render_profile_layout(
+    template: Template, profile: GithubProfile, avatar: Avatar, theme: Theme
+) -> str:
     """Post: a self-contained SVG; the avatar is inlined because READMEs block external images."""
     rows = _rows(profile)
     agents = ", ".join(f"{row.name} {_format_tokens(row.tokens)}" for row in rows)
     description = f"{profile.login}: {_format_tokens(profile.total_tokens)} estimated tokens, {profile.rarity}"
-    return _profile_template.render(
+    return template.render(
         name=_shortened_login(profile.login, _PROFILE_NAME_MAX_LENGTH),
         total_tokens=profile.total_tokens,
         rarity=profile.rarity,
@@ -180,6 +139,16 @@ def render_profile_card(profile: GithubProfile, avatar: Avatar, theme: Theme) ->
         description=f"{description}. {agents}." if rows else f"{description}.",
         avatar_url=_avatar_data_url(avatar),
     )
+
+
+def render_profile_card(profile: GithubProfile, avatar: Avatar, theme: Theme) -> str:
+    """Post: the photo on top, then the name, rarity, total and agents."""
+    return _render_profile_layout(_profile_template, profile, avatar, theme)
+
+
+def render_wide_profile_card(profile: GithubProfile, avatar: Avatar, theme: Theme) -> str:
+    """Post: the photo on the left, the name, rarity, total and agents on its right."""
+    return _render_profile_layout(_wide_profile_template, profile, avatar, theme)
 
 
 def render_scanning_card(login: str, theme: Theme) -> str:

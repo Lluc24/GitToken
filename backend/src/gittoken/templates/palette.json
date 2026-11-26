@@ -1,0 +1,34 @@
+{
+  "brand_rim_colors": ["#67e8f9", "#a78bfa", "#f0abfc"],
+  "heatmap_glows": [["cyan", "#22d3ee", 0.1, 0, 0.6], ["violet", "#8b5cf6", 0.95, 0.3, 0.55], ["pink", "#e879f9", 0.45, 1.1, 0.6]],
+  "iridescent_rarities": ["legendary", "champion"],
+  "iridescent_rim_stops": [[0, "#67e8f9"], [0.25, "#e879f9"], [0.5, "#fcd34d"], [0.75, "#86efac"], [1, "#67e8f9"]],
+  "palettes": {
+    "dark": {
+      "background": "#0b0e1a",
+      "ink": "#ffffff",
+      "heatmap_glow_opacity": "0.35",
+      "heatmap_levels": [["#ffffff", "0.08"], ["#67e8f9", "1"], ["#818cf8", "1"], ["#a855f7", "1"], ["#e879f9", "1"]],
+      "rarities": {
+        "common": ["#7dd3fc", "#e0f2fe", "#38bdf8", "#3b82f6"],
+        "rare": ["#fdba74", "#fde68a", "#fb923c", "#f43f5e"],
+        "epic": ["#c4b5fd", "#f0abfc", "#8b5cf6", "#3b82f6"],
+        "legendary": ["#a5f3fc", "#67e8f9", "#e879f9", "#fcd34d"],
+        "champion": ["#fcd34d", "#fef3c7", "#f59e0b", "#f97316"]
+      }
+    },
+    "light": {
+      "background": "#ffffff",
+      "ink": "#0b0e1a",
+      "heatmap_glow_opacity": "0.28",
+      "heatmap_levels": [["#0b0e1a", "0.05"], ["#a5f3fc", "1"], ["#67e8f9", "1"], ["#a78bfa", "1"], ["#d946ef", "1"]],
+      "rarities": {
+        "common": ["#0284c7", "#7dd3fc", "#38bdf8", "#2563eb"],
+        "rare": ["#ea580c", "#fdba74", "#fb923c", "#e11d48"],
+        "epic": ["#7c3aed", "#d8b4fe", "#8b5cf6", "#2563eb"],
+        "legendary": ["#0e7490", "#67e8f9", "#e879f9", "#f59e0b"],
+        "champion": ["#b45309", "#fcd34d", "#f59e0b", "#ea580c"]
+      }
+    }
+  }
+}

@@ -1,7 +1,7 @@
 from collections import Counter
 from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from enum import StrEnum
 from types import MappingProxyType
 from typing import NewType
@@ -70,6 +70,32 @@ class DayActivity:
     @property
     def tokens(self) -> int:
         return estimate_tokens(self.lines_added)
+
+
+HEATMAP_WEEKS = 53
+DAYS_PER_WEEK = 7
+_NO_ACTIVITY = DayActivity(0, 0)
+
+
+@dataclass(frozen=True)
+class HeatmapCell:
+    week: int
+    weekday: int
+    level: int
+
+
+@dataclass(frozen=True)
+class MonthLabel:
+    week: int
+    name: str
+
+
+@dataclass(frozen=True)
+class Heatmap:
+    cells: tuple[HeatmapCell, ...]
+    month_labels: tuple[MonthLabel, ...]
+    total_tokens: int
+    agent_commits: int
 
 
 class Rarity(StrEnum):
@@ -262,3 +288,50 @@ class LeaderboardEntry:
     @property
     def rarity(self) -> Rarity:
         return rarity_for(self.total_tokens)
+
+
+def _activity_level(activity: DayActivity, quartile_tokens: tuple[int, ...]) -> int:
+    """Pre: quartile_tokens are the quartiles of the window's tokens on days with agent commits.
+    Post: 0 for a day without agent commits, else 1 to 4 by quartile, as GitHub shades its graph."""
+    level = 0
+    if activity.commits:
+        level = 1 + sum(activity.tokens > quartile for quartile in quartile_tokens)
+    return level
+
+
+def _quartile_tokens(daily_activities: list[DayActivity]) -> tuple[int, ...]:
+    """Post: the first, second and third quartiles of tokens on days with agent commits; empty
+    if there are none."""
+    active_tokens = sorted(activity.tokens for activity in daily_activities if activity.commits)
+    quartiles: tuple[int, ...] = ()
+    if active_tokens:
+        quartiles = tuple(active_tokens[len(active_tokens) * quarter // 4] for quarter in (1, 2, 3))
+    return quartiles
+
+
+def heatmap(profile: GithubProfile, today: date) -> Heatmap:
+    """Post: the 53 weeks up to today, Sunday first, one cell per day in date order, each shaded by its tokens."""
+    first_day = today - timedelta(
+        days=(today.weekday() + 1) % DAYS_PER_WEEK + DAYS_PER_WEEK * (HEATMAP_WEEKS - 1)
+    )
+    days = [first_day + timedelta(days=offset) for offset in range((today - first_day).days + 1)]
+    activity_by_day = profile.activity_by_day
+    daily_activities = [activity_by_day.get(day, _NO_ACTIVITY) for day in days]
+    quartile_tokens = _quartile_tokens(daily_activities)
+    return Heatmap(
+        cells=tuple(
+            HeatmapCell(
+                offset // DAYS_PER_WEEK,
+                offset % DAYS_PER_WEEK,
+                _activity_level(activity, quartile_tokens),
+            )
+            for offset, activity in enumerate(daily_activities)
+        ),
+        month_labels=tuple(
+            MonthLabel(offset // DAYS_PER_WEEK, day.strftime("%b"))
+            for offset, day in enumerate(days)
+            if offset % DAYS_PER_WEEK == 0 and day.day <= DAYS_PER_WEEK
+        ),
+        total_tokens=sum(activity.tokens for activity in daily_activities),
+        agent_commits=sum(activity.commits for activity in daily_activities),
+    )

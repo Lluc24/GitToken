@@ -13,20 +13,29 @@ import {
   avatarUrl,
   badgesIndexPath,
   badgesPagePath,
+  listAvatarSizePixels,
   profilePath,
 } from "./paths";
 import { SegmentedControl } from "./SegmentedControl";
 import { type Theme, useTheme } from "./theme";
 
-const snippetFormats = ["README", "Markdown", "URL"] as const;
+const snippetFormats = ["README", "Markdown", "URL", "Widget"] as const;
 
 type SnippetFormat = (typeof snippetFormats)[number];
 
 const copiedLabelDurationMilliseconds = 2000;
 
+const productionHost = import.meta.env.VERCEL_PROJECT_PRODUCTION_URL;
+
+// Copies from a preview deployment must still point at the origin a phone can reach.
+const widgetOrigin =
+  productionHost === undefined
+    ? window.location.origin
+    : `https://${productionHost}`;
+
 type CopyResult = "copied" | "failed";
 
-// README follows the reader's GitHub theme through <picture>; the others use the site's theme.
+// README follows the reader's GitHub theme through <picture>; Widget follows the phone's; the others use the site's.
 function snippet(
   format: SnippetFormat,
   login: GithubLogin,
@@ -48,15 +57,21 @@ function snippet(
     ].join("\n"),
     Markdown: `[![${alt}](${badgeUrl})](${profileUrl})`,
     URL: badgeUrl,
+    Widget: badge.widget.script(widgetOrigin, login),
   };
   return snippetByFormat[format];
 }
 
-function BadgeSection({ login, badge }: { login: GithubLogin; badge: Badge }) {
-  const theme = useTheme();
-  const [format, setFormat] = useState<SnippetFormat>("README");
+function SnippetBox({
+  label,
+  text,
+  isMultiline,
+}: {
+  label: string;
+  text: string;
+  isMultiline: boolean;
+}) {
   const [copyResult, setCopyResult] = useState<CopyResult | null>(null);
-  const text = snippet(format, login, badge, theme);
   const isCopied = copyResult === "copied";
 
   useEffect(() => {
@@ -70,11 +85,6 @@ function BadgeSection({ login, badge }: { login: GithubLogin; badge: Badge }) {
     return undefined;
   }, [isCopied]);
 
-  function selectFormat(selectedFormat: SnippetFormat) {
-    setFormat(selectedFormat);
-    setCopyResult(null);
-  }
-
   async function copySnippet() {
     setCopyResult(null);
     try {
@@ -84,6 +94,41 @@ function BadgeSection({ login, badge }: { login: GithubLogin; badge: Badge }) {
       setCopyResult("failed");
     }
   }
+
+  return (
+    <>
+      <div className="mt-2 flex items-start gap-2 rounded-2xl bg-night/5 dark:bg-black/40 py-2 pr-2 pl-4 shadow-[inset_0_1px_0_rgb(255_255_255/0.08)]">
+        <pre
+          className={`min-w-0 flex-1 py-1.5 font-mono text-[13px] text-night/85 dark:text-white/85 ${isMultiline ? "max-h-64 overflow-auto" : "truncate"}`}
+        >
+          <code>{text}</code>
+        </pre>
+        <button
+          type="button"
+          onClick={copySnippet}
+          className={`shrink-0 px-4 py-2 text-sm sm:py-1.5 ${primaryActionClassName}`}
+        >
+          {isCopied ? "Copied ✓" : "Copy"}
+        </button>
+      </div>
+      <p role="status" className="sr-only">
+        {isCopied ? `${label} copied` : ""}
+      </p>
+      {copyResult === "failed" && (
+        <p
+          role="alert"
+          className="mt-2 px-1 text-rose-700 text-sm dark:text-rose-200"
+        >
+          Couldn't copy. Select the snippet and copy it yourself.
+        </p>
+      )}
+    </>
+  );
+}
+
+function BadgeSection({ login, badge }: { login: GithubLogin; badge: Badge }) {
+  const theme = useTheme();
+  const [format, setFormat] = useState<SnippetFormat>("README");
 
   return (
     <section
@@ -113,33 +158,29 @@ function BadgeSection({ login, badge }: { login: GithubLogin; badge: Badge }) {
           variant="text"
           options={snippetFormats}
           selected={format}
-          onSelect={selectFormat}
+          onSelect={setFormat}
           renderOption={(option) => option}
         />
       </div>
-      <div className="mt-2 flex items-center gap-2 rounded-2xl bg-night/5 dark:bg-black/40 py-2 pr-2 pl-4 shadow-[inset_0_1px_0_rgb(255_255_255/0.08)]">
-        <code className="min-w-0 flex-1 truncate font-mono text-[13px] text-night/85 dark:text-white/85">
-          {text}
-        </code>
-        <button
-          type="button"
-          onClick={copySnippet}
-          className={`shrink-0 px-4 py-2 text-sm sm:py-1.5 ${primaryActionClassName}`}
-        >
-          {isCopied ? "Copied ✓" : "Copy"}
-        </button>
-      </div>
-      <p role="status" className="sr-only">
-        {isCopied ? `${format} snippet copied` : ""}
-      </p>
-      {copyResult === "failed" && (
-        <p
-          role="alert"
-          className="mt-2 px-1 text-rose-700 text-sm dark:text-rose-200"
-        >
-          Couldn't copy. Select the snippet and copy it yourself.
+      {format === "Widget" && (
+        <p className="mt-3 px-1 text-night/60 dark:text-white/60 text-sm">
+          An iPhone home-screen widget. Install{" "}
+          <a
+            href="https://apps.apple.com/app/scriptable/id1405459188"
+            className="underline"
+          >
+            Scriptable
+          </a>
+          , paste this script into a new script, then add a{" "}
+          {badge.widget.family} Scriptable widget and pick the script.
         </p>
       )}
+      <SnippetBox
+        key={format}
+        label={`${format} snippet`}
+        text={snippet(format, login, badge, theme)}
+        isMultiline={format === "Widget"}
+      />
     </section>
   );
 }
@@ -165,7 +206,8 @@ export function BadgesPage({
         <div>
           <h1 className="font-bold text-4xl tracking-tight">Badges</h1>
           <p className="mt-1 text-night/60 dark:text-white/60">
-            Embed your GitToken in a README or a website. They update every day.
+            Embed your GitToken in a README, a website or your home screen. They
+            update every day.
           </p>
         </div>
         {login !== null && (
@@ -173,7 +215,7 @@ export function BadgesPage({
             className={`flex max-w-full items-center gap-2 rounded-full p-1 ${glassClassName}`}
           >
             <img
-              src={avatarUrl(login)}
+              src={avatarUrl(login, listAvatarSizePixels)}
               alt=""
               className="size-8 shrink-0 rounded-full ring-1 ring-night/30 dark:ring-white/30"
             />

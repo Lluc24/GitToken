@@ -1,0 +1,24 @@
+{% from "profile_card.jinja" import profile_card with context %}
+{% set inset = 12 %}
+{% set photo_size = 176 %}
+{% set height = photo_size + 2 * inset %}
+{% set panel_x = inset + photo_size + 12 %}
+{% set panel_width = 272 %}
+{% set width = panel_x + panel_width + inset %}
+{{ profile_card(
+  width=width,
+  height=height,
+  photo_x=inset,
+  photo_y=inset,
+  photo_size=photo_size,
+  text_x=panel_x + 10,
+  name_y=inset + 22,
+  rarity_y=inset + 42,
+  total_x=width - inset - 10,
+  total_y=inset + 38,
+  panel_x=panel_x,
+  panel_y=inset + 56,
+  panel_width=panel_width,
+  label_x=panel_x + panel_width / 2,
+  label_y=height - inset - 4,
+) }}
