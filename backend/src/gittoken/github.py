@@ -250,6 +250,10 @@ def _is_pushed_since_commits_start(pushed_at: datetime | None) -> bool:
     return pushed_at is not None and pushed_at >= _COMMITS_SINCE
 
 
+def _is_pushed_before_commits_start(pushed_at: datetime | None) -> bool:
+    return pushed_at is not None and pushed_at < _COMMITS_SINCE
+
+
 async def _query(
     github_client: GithubApiClient,
     query: str,
@@ -347,8 +351,7 @@ async def _fetch_public_repositories(
         next_cursor = page.page_info.next_cursor
         # The query lists the most recently pushed first, so one older repository ends the listing.
         if next_cursor is None or any(
-            repository.pushed_at is not None and repository.pushed_at < _COMMITS_SINCE
-            for repository in page.nodes
+            _is_pushed_before_commits_start(repository.pushed_at) for repository in page.nodes
         ):
             return _PublicRepositories(
                 GithubUserId(data.user.database_id),
