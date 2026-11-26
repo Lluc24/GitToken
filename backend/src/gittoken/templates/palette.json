@@ -1,5 +1,8 @@
 {
   "brand_rim_colors": ["#67e8f9", "#a78bfa", "#f0abfc"],
+  "heatmap_glows": [["cyan", "#22d3ee", 0.1, 0, 0.6], ["violet", "#8b5cf6", 0.95, 0.3, 0.55], ["pink", "#e879f9", 0.45, 1.1, 0.6]],
+  "iridescent_rarities": ["legendary", "champion"],
+  "iridescent_rim_stops": [[0, "#67e8f9"], [0.25, "#e879f9"], [0.5, "#fcd34d"], [0.75, "#86efac"], [1, "#67e8f9"]],
   "palettes": {
     "dark": {
       "background": "#0b0e1a",

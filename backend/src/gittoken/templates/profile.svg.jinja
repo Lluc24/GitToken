@@ -1,8 +1,8 @@
-{% from "palette.jinja" import palettes %}
+{% from "palette.jinja" import palettes, iridescent_rarities, iridescent_rim_stops %}
 {% from "card.jinja" import font, mono %}
 {% set palette = palettes[theme] %}
 {% set color = palette.rarities[rarity] %}
-{% set is_iridescent = rarity in ("legendary", "champion") %}
+{% set is_iridescent = rarity in iridescent_rarities %}
 {% set width = 300 %}
 {% set inset = 12 %}
 {% set photo_size = width - 2 * inset %}
@@ -28,11 +28,9 @@
     </mask>
     <linearGradient id="rim-colors" x1="0" y1="0" x2="1" y2="1">
 {% if is_iridescent %}
-      <stop offset="0" stop-color="#67e8f9"/>
-      <stop offset="0.25" stop-color="#e879f9"/>
-      <stop offset="0.5" stop-color="#fcd34d"/>
-      <stop offset="0.75" stop-color="#86efac"/>
-      <stop offset="1" stop-color="#67e8f9"/>
+{% for offset, stop_color in iridescent_rim_stops %}
+      <stop offset="{{ offset }}" stop-color="{{ stop_color }}"/>
+{% endfor %}
 {% else %}
       <stop offset="0" stop-color="{{ color[1] }}"/>
       <stop offset="0.5" stop-color="{{ color[2] }}" stop-opacity="0.4"/>

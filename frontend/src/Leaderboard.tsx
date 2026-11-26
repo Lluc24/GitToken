@@ -2,7 +2,7 @@ import { Link } from "react-router-dom";
 import { type Rarity, useLeaderboard } from "./api";
 import { formatTokens } from "./format";
 import { glassClassName } from "./glass";
-import { avatarUrl, profilePath } from "./paths";
+import { avatarUrl, listAvatarSizePixels, profilePath } from "./paths";
 
 const medalClassNames = [
   "bg-gradient-to-br from-amber-200 to-amber-500 text-night",
@@ -50,7 +50,7 @@ export function Leaderboard() {
                 {index + 1}
               </span>
               <img
-                src={avatarUrl(profile.login)}
+                src={avatarUrl(profile.login, listAvatarSizePixels)}
                 alt=""
                 className="size-8 rounded-full ring-1 ring-night/30 dark:ring-white/30"
               />

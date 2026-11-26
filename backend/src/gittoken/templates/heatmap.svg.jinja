@@ -1,4 +1,4 @@
-{% from "palette.jinja" import palettes, brand_rim_colors %}
+{% from "palette.jinja" import palettes, brand_rim_colors, heatmap_glows as glows %}
 {% from "card.jinja" import font, rim_gradient, card_fill, card_border %}
 {% set palette = palettes[theme] %}
 {% set cell_size = 10 %}
@@ -8,7 +8,6 @@
 {% set grid_top = 84 %}
 {% set width = grid_left + weeks * cell_step - (cell_step - cell_size) + padding + 18 %}
 {% set height = grid_top + days_per_week * cell_step - (cell_step - cell_size) + 44 %}
-{% set glows = (("cyan", "#22d3ee", 0.1, 0, 0.6), ("violet", "#8b5cf6", 0.95, 0.3, 0.55), ("pink", "#e879f9", 0.45, 1.1, 0.6)) %}
 {% set legend_left = width - padding - 28 - palette.heatmap_levels|length * cell_step %}
 <svg xmlns="http://www.w3.org/2000/svg" width="{{ width }}" height="{{ height }}" viewBox="0 0 {{ width }} {{ height }}" role="img" aria-label="{{ description }}">
   <title>{{ description }}</title>

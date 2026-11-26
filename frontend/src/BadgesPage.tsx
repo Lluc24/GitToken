@@ -13,13 +13,13 @@ import {
   avatarUrl,
   badgesIndexPath,
   badgesPagePath,
+  listAvatarSizePixels,
   profilePath,
 } from "./paths";
 import { SegmentedControl } from "./SegmentedControl";
 import { type Theme, useTheme } from "./theme";
-import { scriptableWidgetScript } from "./widget";
 
-const snippetFormats = ["README", "Markdown", "URL"] as const;
+const snippetFormats = ["README", "Markdown", "URL", "Widget"] as const;
 
 type SnippetFormat = (typeof snippetFormats)[number];
 
@@ -35,7 +35,7 @@ const widgetOrigin =
 
 type CopyResult = "copied" | "failed";
 
-// README follows the reader's GitHub theme through <picture>; the others use the site's theme.
+// README follows the reader's GitHub theme through <picture>; Widget follows the phone's; the others use the site's.
 function snippet(
   format: SnippetFormat,
   login: GithubLogin,
@@ -57,6 +57,7 @@ function snippet(
     ].join("\n"),
     Markdown: `[![${alt}](${badgeUrl})](${profileUrl})`,
     URL: badgeUrl,
+    Widget: badge.widget.script(widgetOrigin, login),
   };
   return snippetByFormat[format];
 }
@@ -161,45 +162,24 @@ function BadgeSection({ login, badge }: { login: GithubLogin; badge: Badge }) {
           renderOption={(option) => option}
         />
       </div>
-      <SnippetBox
-        key={format}
-        label={`${format} snippet`}
-        text={snippet(format, login, badge, theme)}
-        isMultiline={false}
-      />
-    </section>
-  );
-}
-
-function WidgetSection({ login }: { login: GithubLogin }) {
-  return (
-    <section
-      aria-labelledby="badge-iphone-widget"
-      className={`rounded-[32px] p-4 sm:p-5 ${glassClassName}`}
-    >
-      <div className="px-1">
-        <h2
-          id="badge-iphone-widget"
-          className="font-semibold text-xl tracking-tight"
-        >
-          iPhone widget
-        </h2>
-        <p className="text-night/60 dark:text-white/60 text-sm">
-          Your tokens and rarity on the home screen. Install{" "}
+      {format === "Widget" && (
+        <p className="mt-3 px-1 text-night/60 dark:text-white/60 text-sm">
+          An iPhone home-screen widget. Install{" "}
           <a
             href="https://apps.apple.com/app/scriptable/id1405459188"
             className="underline"
           >
             Scriptable
           </a>
-          , paste this script into a new script, then add a Scriptable widget
-          and pick the script.
+          , paste this script into a new script, then add a{" "}
+          {badge.widget.family} Scriptable widget and pick the script.
         </p>
-      </div>
+      )}
       <SnippetBox
-        label="Widget script"
-        text={scriptableWidgetScript(widgetOrigin, login)}
-        isMultiline={true}
+        key={format}
+        label={`${format} snippet`}
+        text={snippet(format, login, badge, theme)}
+        isMultiline={format === "Widget"}
       />
     </section>
   );
@@ -235,7 +215,7 @@ export function BadgesPage({
             className={`flex max-w-full items-center gap-2 rounded-full p-1 ${glassClassName}`}
           >
             <img
-              src={avatarUrl(login)}
+              src={avatarUrl(login, listAvatarSizePixels)}
               alt=""
               className="size-8 shrink-0 rounded-full ring-1 ring-night/30 dark:ring-white/30"
             />
@@ -259,12 +239,9 @@ export function BadgesPage({
           onSubmitLogin={(typedLogin) => navigate(badgesPagePath(typedLogin))}
         />
       ) : (
-        <>
-          {badges.map((badge) => (
-            <BadgeSection key={badge.name} login={login} badge={badge} />
-          ))}
-          <WidgetSection login={login} />
-        </>
+        badges.map((badge) => (
+          <BadgeSection key={badge.name} login={login} badge={badge} />
+        ))
       )}
     </main>
   );

@@ -22,8 +22,14 @@ export function userPath(login: GithubLogin): string {
   return `/v1/users/${login}`;
 }
 
-export function avatarUrl(login: GithubLogin): string {
-  return `https://avatars.githubusercontent.com/${login}?size=64`;
+export function activityPath(login: GithubLogin): string {
+  return `${userPath(login)}/activity`;
+}
+
+export const listAvatarSizePixels = 64;
+
+export function avatarUrl(login: GithubLogin, sizePixels: number): string {
+  return `https://avatars.githubusercontent.com/${login}?size=${sizePixels}`;
 }
 
 export function profileCardPath(login: GithubLogin, theme: Theme): string {

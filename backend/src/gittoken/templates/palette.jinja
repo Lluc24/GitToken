@@ -1,5 +1,9 @@
 {# palette.json, which the widget script in frontend/src/widget.ts also reads. Per theme: the card base, the ink for
    text and marks, per rarity the accent, then the rim and bar gradient stops, and for the heatmap the glow opacity
-   and the cell color and opacity per level, from no commits up. #}
+   and the cell color and opacity per level, from no commits up. Shared by both themes: the heatmap glows as name,
+   color, center and radius, and the rarities whose profile rim is the iridescent ring with its stops. #}
 {% set palettes = palette_file.palettes %}
 {% set brand_rim_colors = palette_file.brand_rim_colors %}
+{% set heatmap_glows = palette_file.heatmap_glows %}
+{% set iridescent_rarities = palette_file.iridescent_rarities %}
+{% set iridescent_rim_stops = palette_file.iridescent_rim_stops %}
