@@ -19,13 +19,23 @@ const profileRefreshMinutes = 6 * 60;
 const errorRefreshMinutes = 15;
 // Leaves room for the percent beside the bar in the narrowest small widget (141pt), as stacks take sizes in points.
 const barTrackWidthPoints = 64;
-// Fits the narrowest medium widget (292 by 141pt) less its rim and padding.
-const photoSizePoints = 108;
+const rimWidthPoints = 2;
+const contentPaddingPoints = 12;
+// The medium widget on 320pt-wide iPhones (292 by 141pt), the narrowest Scriptable runs on.
+const narrowestMediumWidthPoints = 292;
+const narrowestMediumHeightPoints = 141;
+// A little under the narrowest medium widget's content height, so the photo never touches its padding.
+const photoSizePoints =
+  narrowestMediumHeightPoints - 2 * (rimWidthPoints + contentPaddingPoints) - 5;
 const avatarSizePixels = 324;
-// 53 weeks of 4pt cells with 1pt gaps fill the 264pt left in the narrowest medium widget.
-const heatmapCellPoints = 4;
+// Keeps the grid 2pt clear of each side at the narrowest width, so fractional cells never meet the padding.
+const heatmapSlackPoints = 4;
+const heatmapWidthPoints =
+  narrowestMediumWidthPoints -
+  2 * (rimWidthPoints + contentPaddingPoints) -
+  heatmapSlackPoints;
 const heatmapGapPoints = 1;
-// A month name at 8pt needs about three 5pt week columns.
+// A month name at 8pt is about 15pt wide: three week columns at the grid's step of about 4.9pt.
 const monthLabelMinWeeks = 3;
 
 const agentPanelSource = `function themeNeutralHex(pick) {
@@ -134,13 +144,13 @@ const widget = new ListWidget();
 widget.url = ${JSON.stringify(`${origin}${profilePath(login)}`)};
 widget.setPadding(0, 0, 0, 0);
 const rim = widget.addStack();
-rim.setPadding(2, 2, 2, 2);
+rim.setPadding(${rimWidthPoints}, ${rimWidthPoints}, ${rimWidthPoints}, ${rimWidthPoints});
 const card = rim.addStack();
 card.cornerRadius = 20;
 card.backgroundColor = themed((theme) => theme.background);
 const content = card.addStack();
 content.layoutVertically();
-content.setPadding(12, 12, 12, 12);
+content.setPadding(${contentPaddingPoints}, ${contentPaddingPoints}, ${contentPaddingPoints}, ${contentPaddingPoints});
 
 /* Mirrors the SVG badges in backend/src/gittoken/templates. Scriptable gradients cannot follow light and dark mode,
    so each gradient is a theme-neutral overlay on a Color.dynamic base. */
@@ -355,8 +365,12 @@ export const activityWidget: Widget = {
       login,
       [`${origin}${activityPath(login)}`],
       [],
-      `const heatmapStepPoints = ${heatmapCellPoints + heatmapGapPoints};
-const daysPerWeek = 7;
+      `const daysPerWeek = 7;
+
+/* The grid, and the month labels above it, span ${heatmapWidthPoints}pt whatever the number of weeks. */
+function heatmapStepPoints(weeks) {
+  return (${heatmapWidthPoints} + ${heatmapGapPoints}) / weeks;
+}
 
 /* Matches f"{agent_commits:,}" in render_heatmap in backend/src/gittoken/badge.py. */
 function groupThousands(count) {
@@ -371,13 +385,13 @@ const levelColors = [
   ...palette.palettes.dark.heatmap_levels.slice(1).map(([hex, opacity]) => new Color(hex, Number(opacity))),
 ];
 
-function cellsSize(columns) {
+function cellsSize(columns, stepPoints) {
   const rows = Math.max(...columns.map((levels) => levels.length));
-  return new Size(columns.length * heatmapStepPoints - ${heatmapGapPoints}, rows * heatmapStepPoints - ${heatmapGapPoints});
+  return new Size(columns.length * stepPoints - ${heatmapGapPoints}, rows * stepPoints - ${heatmapGapPoints});
 }
 
 /* One image for the whole grid keeps the widget to a few dozen views; a stack per cell would be several hundred. */
-function cellsImage(columns, size) {
+function cellsImage(columns, stepPoints, size) {
   const context = new DrawContext();
   context.size = size;
   context.opaque = false;
@@ -385,7 +399,7 @@ function cellsImage(columns, size) {
   columns.forEach((levels, week) => {
     levels.forEach((level, weekday) => {
       const path = new Path();
-      path.addRoundedRect(new Rect(week * heatmapStepPoints, weekday * heatmapStepPoints, ${heatmapCellPoints}, ${heatmapCellPoints}), 1, 1);
+      path.addRoundedRect(new Rect(week * stepPoints, weekday * stepPoints, stepPoints - ${heatmapGapPoints}, stepPoints - ${heatmapGapPoints}), 1, 1);
       context.addPath(path);
       context.setFillColor(levelColors[level]);
       context.fillPath();
@@ -394,22 +408,22 @@ function cellsImage(columns, size) {
   return context.getImage();
 }
 
-function addCells(stack, columns) {
-  const size = cellsSize(columns);
-  const image = stack.addImage(cellsImage(columns, size));
+function addCells(stack, columns, stepPoints) {
+  const size = cellsSize(columns, stepPoints);
+  const image = stack.addImage(cellsImage(columns, stepPoints, size));
   image.imageSize = size;
 }
 
 /* A label too close to the grid's right edge to fit is left out, as its month has barely started. */
-function addMonthLabels(stack, monthLabels, weeks, labelColor) {
+function addMonthLabels(stack, monthLabels, weeks, stepPoints, labelColor) {
   const labels = stack.addStack();
   if (monthLabels[0].week > 0) {
-    labels.addSpacer(monthLabels[0].week * heatmapStepPoints);
+    labels.addSpacer(monthLabels[0].week * stepPoints);
   }
   monthLabels.forEach((label, index) => {
     const nextWeek = index + 1 < monthLabels.length ? monthLabels[index + 1].week : weeks;
     /* The grid's last column has no gap after it, so the last slot ends one gap earlier. */
-    const slotWidthPoints = (nextWeek - label.week) * heatmapStepPoints - (nextWeek === weeks ? ${heatmapGapPoints} : 0);
+    const slotWidthPoints = (nextWeek - label.week) * stepPoints - (nextWeek === weeks ? ${heatmapGapPoints} : 0);
     if (nextWeek - label.week >= ${monthLabelMinWeeks}) {
       const slot = labels.addStack();
       slot.size = new Size(slotWidthPoints, 10);
@@ -443,8 +457,9 @@ function draw(activityBody) {
   heatmapBlock.layoutVertically();
   heatmapBlock.spacing = 2;
   const weekColumns = Array.from({ length: Math.ceil(activity.levels.length / daysPerWeek) }, (_, week) => activity.levels.slice(week * daysPerWeek, (week + 1) * daysPerWeek));
-  addMonthLabels(heatmapBlock, activity.month_labels, weekColumns.length, labelColor);
-  addCells(heatmapBlock, weekColumns);
+  const stepPoints = heatmapStepPoints(weekColumns.length);
+  addMonthLabels(heatmapBlock, activity.month_labels, weekColumns.length, stepPoints, labelColor);
+  addCells(heatmapBlock, weekColumns, stepPoints);
   heatmapRow.addSpacer();
   content.addSpacer();
   const legend = content.addStack();
@@ -453,7 +468,7 @@ function draw(activityBody) {
   addText(legend, "GitToken", Font.systemFont(8), labelColor);
   legend.addSpacer();
   addText(legend, "Less", Font.systemFont(8), labelColor);
-  addCells(legend, levelColors.map((_, level) => [level]));
+  addCells(legend, levelColors.map((_, level) => [level]), stepPoints);
   addText(legend, "More", Font.systemFont(8), labelColor);
 }`,
     ),
