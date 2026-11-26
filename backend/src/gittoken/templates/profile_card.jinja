@@ -1,0 +1,73 @@
+{% from "palette.jinja" import palettes, iridescent_rarities, iridescent_rim_stops %}
+{% from "card.jinja" import font, mono %}
+{% set row_height = 40 %}
+{% set panel_height = rows|length * row_height + 12 if rows else 0 %}
+{# The profile card's markup, shared by its tall and wide layouts; the caller places each part. #}
+{% macro profile_card(width, height, photo_x, photo_y, photo_size, text_x, name_y, rarity_y, total_x, total_y, panel_x, panel_y, panel_width, label_x, label_y) %}
+{% set palette = palettes[theme] %}
+{% set color = palette.rarities[rarity] %}
+{% set is_iridescent = rarity in iridescent_rarities %}
+{# Twice the card's longest side, so the rotation always covers the 2px frame. #}
+{% set spin_size = 2 * [width, height] | max %}
+{# Bold glyphs average about 0.6em, and 16px stays free before the total, so the name never touches it. #}
+{% set name_size = [24, [13, ((total_x - text_x - 16) / name|length) | int] | max] | min %}
+<svg xmlns="http://www.w3.org/2000/svg" width="{{ width }}" height="{{ height }}" viewBox="0 0 {{ width }} {{ height }}" role="img" aria-label="{{ description }}">
+  <title>{{ description }}</title>
+  <style>
+    .spin { transform-box: view-box; transform-origin: {{ width / 2 }}px {{ height / 2 }}px; animation: spin 6s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @media (prefers-reduced-motion: reduce) { .spin { animation: none; } }
+  </style>
+  <defs>
+    <mask id="rim">
+      <rect width="{{ width }}" height="{{ height }}" rx="36" fill="#ffffff"/>
+      <rect x="2" y="2" width="{{ width - 4 }}" height="{{ height - 4 }}" rx="34" fill="#000000"/>
+    </mask>
+    <linearGradient id="rim-colors" x1="0" y1="0" x2="1" y2="1">
+{% if is_iridescent %}
+{% for offset, stop_color in iridescent_rim_stops %}
+      <stop offset="{{ offset }}" stop-color="{{ stop_color }}"/>
+{% endfor %}
+{% else %}
+      <stop offset="0" stop-color="{{ color[1] }}"/>
+      <stop offset="0.5" stop-color="{{ color[2] }}" stop-opacity="0.4"/>
+      <stop offset="1" stop-color="{{ color[3] }}"/>
+{% endif %}
+    </linearGradient>
+    <linearGradient id="tint" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="{{ color[2] }}" stop-opacity="0.2"/>
+      <stop offset="0.6" stop-color="{{ color[2] }}" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="bar" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="{{ color[2] }}"/>
+      <stop offset="1" stop-color="{{ color[3] }}"/>
+    </linearGradient>
+    <clipPath id="photo"><rect x="{{ photo_x }}" y="{{ photo_y }}" width="{{ photo_size }}" height="{{ photo_size }}" rx="28"/></clipPath>
+  </defs>
+  <rect x="2" y="2" width="{{ width - 4 }}" height="{{ height - 4 }}" rx="34" fill="{{ palette.background }}"/>
+  <rect x="2" y="2" width="{{ width - 4 }}" height="{{ height - 4 }}" rx="34" fill="url(#tint)"/>
+  <g mask="url(#rim)">
+    <rect{% if is_iridescent %} class="spin"{% endif %} x="{{ (width - spin_size) / 2 }}" y="{{ (height - spin_size) / 2 }}" width="{{ spin_size }}" height="{{ spin_size }}" fill="url(#rim-colors)"/>
+  </g>
+  <image href="{{ avatar_url }}" x="{{ photo_x }}" y="{{ photo_y }}" width="{{ photo_size }}" height="{{ photo_size }}" preserveAspectRatio="xMidYMid slice" clip-path="url(#photo)"/>
+  <rect x="{{ photo_x + 0.5 }}" y="{{ photo_y + 0.5 }}" width="{{ photo_size - 1 }}" height="{{ photo_size - 1 }}" rx="27.5" fill="none" stroke="{{ palette.ink }}" stroke-opacity="0.15"/>
+  <text x="{{ text_x }}" y="{{ name_y }}" fill="{{ palette.ink }}" font-family="{{ font }}" font-size="{{ name_size }}" font-weight="700" letter-spacing="-0.4">{{ name }}</text>
+  <text x="{{ text_x }}" y="{{ rarity_y }}" fill="{{ color[0] }}" font-family="{{ font }}" font-size="11" font-weight="600" letter-spacing="3.3">{{ rarity | upper }}</text>
+  <text x="{{ total_x }}" y="{{ total_y }}" text-anchor="end" fill="{{ color[0] }}" font-family="{{ font }}" font-size="30" font-weight="700" letter-spacing="-0.6">{{ total_tokens | compact_tokens }}</text>
+{% if rows %}
+  <rect x="{{ panel_x }}" y="{{ panel_y }}" width="{{ panel_width }}" height="{{ panel_height }}" rx="24" fill="{{ palette.ink }}" fill-opacity="0.06"/>
+{% endif %}
+{% for row in rows %}
+{% set top = panel_y + 14 + loop.index0 * row_height %}
+{% set bar_width = [6, ((panel_width - 32) * row.share) | round | int] | max %}
+  <g transform="translate({{ panel_x + 16 }} {{ top }})" color="{{ palette.ink }}">
+    {% include "marks/" ~ row.mark ~ ".svg" ignore missing %}
+  </g>
+  <text x="{{ panel_x + 40 }}" y="{{ top + 13 }}" fill="{{ palette.ink }}" font-family="{{ font }}" font-size="14" font-weight="500">{{ row.name }}</text>
+  <text x="{{ panel_x + panel_width - 16 }}" y="{{ top + 13 }}" text-anchor="end" font-family="{{ mono }}" font-size="12"><tspan fill="{{ palette.ink }}">{{ row.tokens | compact_tokens }}</tspan><tspan fill="{{ palette.ink }}" fill-opacity="0.62"> {{ row.percent }}%</tspan></text>
+  <rect x="{{ panel_x + 16 }}" y="{{ top + 20 }}" width="{{ panel_width - 32 }}" height="6" rx="3" fill="{{ palette.ink }}" fill-opacity="0.1"/>
+  <rect x="{{ panel_x + 16 }}" y="{{ top + 20 }}" width="{{ bar_width }}" height="6" rx="3" fill="url(#bar)"/>
+{% endfor %}
+  <text x="{{ label_x }}" y="{{ label_y }}" text-anchor="middle" fill="{{ palette.ink }}" fill-opacity="0.4" font-family="{{ font }}" font-size="10" font-weight="600" letter-spacing="3.5">GITTOKEN</text>
+</svg>
+{%- endmacro %}

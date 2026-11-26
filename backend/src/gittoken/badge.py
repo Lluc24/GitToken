@@ -6,7 +6,7 @@ from enum import StrEnum
 from importlib.resources import files
 from io import BytesIO
 
-from jinja2 import Environment, PackageLoader, StrictUndefined
+from jinja2 import Environment, PackageLoader, StrictUndefined, Template
 from PIL import Image
 
 from gittoken.domain import (
@@ -65,6 +65,7 @@ _environment.globals["palette_file"] = json.loads(
 )
 _badge_template = _environment.get_template("badge.svg.jinja")
 _profile_template = _environment.get_template("profile.svg.jinja")
+_wide_profile_template = _environment.get_template("wide_profile.svg.jinja")
 _notice_template = _environment.get_template("notice.svg.jinja")
 _heatmap_template = _environment.get_template("heatmap.svg.jinja")
 
@@ -122,12 +123,14 @@ def _avatar_data_url(avatar: Avatar) -> str:
     return f"data:image/jpeg;base64,{b64encode(jpeg.getvalue()).decode()}"
 
 
-def render_profile_card(profile: GithubProfile, avatar: Avatar, theme: Theme) -> str:
+def _render_profile_layout(
+    template: Template, profile: GithubProfile, avatar: Avatar, theme: Theme
+) -> str:
     """Post: a self-contained SVG; the avatar is inlined because READMEs block external images."""
     rows = _rows(profile)
     agents = ", ".join(f"{row.name} {_format_tokens(row.tokens)}" for row in rows)
     description = f"{profile.login}: {_format_tokens(profile.total_tokens)} estimated tokens, {profile.rarity}"
-    return _profile_template.render(
+    return template.render(
         name=_shortened_login(profile.login, _PROFILE_NAME_MAX_LENGTH),
         total_tokens=profile.total_tokens,
         rarity=profile.rarity,
@@ -136,6 +139,16 @@ def render_profile_card(profile: GithubProfile, avatar: Avatar, theme: Theme) ->
         description=f"{description}. {agents}." if rows else f"{description}.",
         avatar_url=_avatar_data_url(avatar),
     )
+
+
+def render_profile_card(profile: GithubProfile, avatar: Avatar, theme: Theme) -> str:
+    """Post: the photo on top, then the name, rarity, total and agents."""
+    return _render_profile_layout(_profile_template, profile, avatar, theme)
+
+
+def render_wide_profile_card(profile: GithubProfile, avatar: Avatar, theme: Theme) -> str:
+    """Post: the photo on the left, the name, rarity, total and agents on its right."""
+    return _render_profile_layout(_wide_profile_template, profile, avatar, theme)
 
 
 def render_scanning_card(login: str, theme: Theme) -> str:

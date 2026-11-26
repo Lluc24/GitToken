@@ -48,6 +48,7 @@ from gittoken.badge import (
     render_heatmap,
     render_profile_card,
     render_scanning_card,
+    render_wide_profile_card,
 )
 from gittoken.db import SupabaseClient, create_supabase_client
 from gittoken.domain import (
@@ -451,6 +452,24 @@ def create_app() -> FastAPI:
         async def render_card(profile: GithubProfile) -> str:
             avatar = await fetch_profile_avatar(avatar_client, login)
             return render_profile_card(profile, avatar, theme)
+
+        return await _badge_response(
+            login,
+            theme,
+            profile_lookups.start_or_join(login),
+            background_tasks,
+            render_card,
+        )
+
+    @app.get("/v1/badges/{login}/wide-profile.svg")
+    async def get_wide_profile_card(
+        login: Annotated[VerifiedGithubUsername, Path(pattern=GITHUB_LOGIN_PATTERN)],
+        background_tasks: BackgroundTasks,
+        theme: Theme = Theme.DARK,
+    ) -> Response:
+        async def render_card(profile: GithubProfile) -> str:
+            avatar = await fetch_profile_avatar(avatar_client, login)
+            return render_wide_profile_card(profile, avatar, theme)
 
         return await _badge_response(
             login,

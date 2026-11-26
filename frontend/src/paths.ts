@@ -36,6 +36,10 @@ export function profileCardPath(login: GithubLogin, theme: Theme): string {
   return `/v1/badges/${login}/profile.svg?theme=${theme}`;
 }
 
+export function wideProfileCardPath(login: GithubLogin, theme: Theme): string {
+  return `/v1/badges/${login}/wide-profile.svg?theme=${theme}`;
+}
+
 export function badgeCardPath(login: GithubLogin, theme: Theme): string {
   return `/v1/badges/${login}.svg?theme=${theme}`;
 }

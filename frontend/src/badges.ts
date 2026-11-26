@@ -1,11 +1,17 @@
 import type { GithubLogin } from "./login";
-import { activityCardPath, badgeCardPath, profileCardPath } from "./paths";
+import {
+  activityCardPath,
+  badgeCardPath,
+  profileCardPath,
+  wideProfileCardPath,
+} from "./paths";
 import type { Theme } from "./theme";
 import {
   activityWidget,
   cardWidget,
   profileWidget,
   type Widget,
+  wideProfileWidget,
 } from "./widget";
 
 export type Badge = {
@@ -21,6 +27,12 @@ export const badges: readonly Badge[] = [
     description: "Your photo, rarity, total tokens and top agents.",
     path: profileCardPath,
     widget: profileWidget,
+  },
+  {
+    name: "Wide profile",
+    description: "Your photo beside your rarity, total tokens and top agents.",
+    path: wideProfileCardPath,
+    widget: wideProfileWidget,
   },
   {
     name: "Card",

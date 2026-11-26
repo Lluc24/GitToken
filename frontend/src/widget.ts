@@ -8,7 +8,7 @@ import {
   userPath,
 } from "./paths";
 
-export type WidgetFamily = "small" | "medium";
+export type WidgetFamily = "small" | "medium" | "large";
 
 export type Widget = {
   readonly family: WidgetFamily;
@@ -21,19 +21,30 @@ const errorRefreshMinutes = 15;
 const barTrackWidthPoints = 64;
 const rimWidthPoints = 2;
 const contentPaddingPoints = 12;
-// The medium widget on 320pt-wide iPhones (292 by 141pt), the narrowest Scriptable runs on.
-const narrowestMediumWidthPoints = 292;
+const panelPaddingPoints = 8;
+// Room for "100%" in 9pt monospaced digits beside a bar.
+const percentWidthPoints = 44;
+// iPhones 320pt wide give the narrowest widgets Scriptable runs in: medium 292 by 141pt, large 292 by 311pt.
+const narrowestWidgetWidthPoints = 292;
 const narrowestMediumHeightPoints = 141;
+// Keeps fractional heatmap cells and the large photo clear of the padding at the narrowest width.
+const narrowestWidthSlackPoints = 4;
+const narrowestContentWidthPoints =
+  narrowestWidgetWidthPoints - 2 * (rimWidthPoints + contentPaddingPoints);
 // A little under the narrowest medium widget's content height, so the photo never touches its padding.
 const photoSizePoints =
   narrowestMediumHeightPoints - 2 * (rimWidthPoints + contentPaddingPoints) - 5;
 const avatarSizePixels = 324;
-// Keeps the grid 2pt clear of each side at the narrowest width, so fractional cells never meet the padding.
-const heatmapSlackPoints = 4;
+const largePhotoWidthPoints =
+  narrowestContentWidthPoints - narrowestWidthSlackPoints;
+// Leaves the large widget's 283pt of content height room for the name, the agent panel and the label.
+const largePhotoHeightPoints = 140;
+const largeBarTrackWidthPoints =
+  largePhotoWidthPoints - 2 * panelPaddingPoints - percentWidthPoints;
+// The largest avatar GitHub serves: about 1.8x across the large photo, so it is the limit rather than a choice.
+const largeAvatarSizePixels = 460;
 const heatmapWidthPoints =
-  narrowestMediumWidthPoints -
-  2 * (rimWidthPoints + contentPaddingPoints) -
-  heatmapSlackPoints;
+  narrowestContentWidthPoints - narrowestWidthSlackPoints;
 const heatmapGapPoints = 1;
 // A month name at 8pt is about 15pt wide: three week columns at the grid's step of about 4.9pt.
 const monthLabelMinWeeks = 3;
@@ -64,9 +75,9 @@ function rarityStyle(rarity) {
 }
 
 /* A start color fading out over a dynamic end color draws the same blend as the badge's two-stop bar gradient. */
-function addBar(stack, fillWidthPoints, startHex, endColor) {
+function addBar(stack, trackWidthPoints, fillWidthPoints, startHex, endColor) {
   const track = stack.addStack();
-  track.size = new Size(${barTrackWidthPoints}, 4);
+  track.size = new Size(trackWidthPoints, 4);
   track.cornerRadius = 2;
   track.backgroundColor = themed((theme) => theme.ink, 0.1);
   /* Scriptable sizes a stack automatically when a dimension is 0. */
@@ -96,7 +107,7 @@ function agentRows(profile, nameByAgent) {
   return rows;
 }
 
-function addAgentPanel(stack, profile, agents, style) {
+function addAgentPanel(stack, profile, agents, style, trackWidthPoints) {
   const nameByAgent = Object.fromEntries(agents.map(({ agent, name }) => [agent, name]));
   const rows = agentRows(profile, nameByAgent);
   if (rows.length > 0) {
@@ -104,7 +115,7 @@ function addAgentPanel(stack, profile, agents, style) {
     panel.layoutVertically();
     panel.spacing = 2;
     panel.cornerRadius = 10;
-    panel.setPadding(4, 8, 4, 8);
+    panel.setPadding(4, ${panelPaddingPoints}, 4, ${panelPaddingPoints});
     panel.backgroundColor = themed((theme) => theme.ink, 0.06);
     const valueColor = themed((theme) => theme.ink, 0.85);
     const valueFont = Font.regularMonospacedSystemFont(9);
@@ -113,17 +124,29 @@ function addAgentPanel(stack, profile, agents, style) {
       addText(nameLine, formatTokens(row.tokens), valueFont, valueColor);
       const barLine = panel.addStack();
       barLine.centerAlignContent();
-      const fillWidthPoints = profile.total_tokens ? Math.max(4, Math.round((${barTrackWidthPoints} * row.tokens) / profile.total_tokens)) : 0;
-      addBar(barLine, fillWidthPoints, style.tintHex, style.barEndColor);
+      const fillWidthPoints = profile.total_tokens ? Math.max(4, Math.round((trackWidthPoints * row.tokens) / profile.total_tokens)) : 0;
+      addBar(barLine, trackWidthPoints, fillWidthPoints, style.tintHex, style.barEndColor);
       barLine.addSpacer();
       addText(barLine, row.percent + "%", valueFont, valueColor);
     }
   }
 }`;
 
+const profileRimSource = `/* Iridescent rims are the ring of profile_card.jinja, without its spin. */
+function drawProfileRim(rarity, style) {
+  if (palette.iridescent_rarities.includes(rarity)) {
+    const stops = palette.iridescent_rim_stops;
+    widget.backgroundColor = new Color(stops[0][1]);
+    rim.backgroundGradient = gradient(stops.map(([, hex]) => new Color(hex)), stops.map(([offset]) => offset), new Point(1, 1));
+  } else {
+    drawRim(style.rimStartHex, style.tintHex, 0.4, style.rimEndHex);
+  }
+}`;
+
 const presentMethodByFamily: Record<WidgetFamily, string> = {
   small: "presentSmall",
   medium: "presentMedium",
+  large: "presentLarge",
 };
 
 /** Post: a Scriptable (https://docs.scriptable.app) script that loads urls, then passes their bodies to the
@@ -261,8 +284,8 @@ ${helperSources.join("\n\n")}
 ${drawSource}
 
 /* config.widgetFamily is undefined when the script runs in the app, which previews the intended size. A small
-   widget fits any size, so only the medium layouts ask to be resized. */
-if (config.runsInWidget && widgetFamily === "medium" && config.widgetFamily !== widgetFamily) {
+   widget fits any size, so only the larger layouts ask to be resized. */
+if (config.runsInWidget && widgetFamily !== "small" && config.widgetFamily !== widgetFamily) {
   drawNotice("Add this as a " + widgetFamily + " widget");
 } else {
   /* The rejection handler covers only the requests, so a bug in draw still surfaces as an error. */
@@ -298,14 +321,14 @@ export const cardWidget: Widget = {
   addLine(content, profile.rarity.toUpperCase(), Font.semiboldSystemFont(9), style.accent);
   addLine(content, formatTokens(profile.total_tokens), Font.boldSystemFont(22), style.accent);
   content.addSpacer();
-  addAgentPanel(content, profile, parseJSON(agentsBody), style);
+  addAgentPanel(content, profile, parseJSON(agentsBody), style, ${barTrackWidthPoints});
 }`,
     ),
 };
 
-/** Styled like profile.svg.jinja: the photo beside tokens, rarity and top agents. */
+/** Styled like profile.svg.jinja: the photo on top, then tokens, rarity and top agents. */
 export const profileWidget: Widget = {
-  family: "medium",
+  family: "large",
   script: (origin, login) =>
     widgetScript(
       "Profile",
@@ -315,21 +338,59 @@ export const profileWidget: Widget = {
       [
         `${origin}${userPath(login)}`,
         `${origin}${agentsPath}`,
+        avatarUrl(login, largeAvatarSizePixels),
+      ],
+      [agentPanelSource, profileRimSource],
+      `function draw(userBody, agentsBody, avatarBody) {
+  const profile = parseJSON(userBody);
+  const style = rarityStyle(profile.rarity);
+  drawProfileRim(profile.rarity, style);
+  drawTint(style.tintHex, 0.2, 0.6);
+  const photoRow = content.addStack();
+  photoRow.addSpacer();
+  const photo = photoRow.addImage(Image.fromData(avatarBody));
+  photo.imageSize = new Size(${largePhotoWidthPoints}, ${largePhotoHeightPoints});
+  photo.applyFillingContentMode();
+  photo.cornerRadius = 16;
+  photo.borderWidth = 1;
+  photo.borderColor = themed((theme) => theme.ink, 0.15);
+  photoRow.addSpacer();
+  content.addSpacer(8);
+  const nameRow = content.addStack();
+  nameRow.centerAlignContent();
+  const nameColumn = nameRow.addStack();
+  nameColumn.layoutVertically();
+  addText(nameColumn, profile.login, Font.boldSystemFont(18), themed((theme) => theme.ink));
+  addText(nameColumn, profile.rarity.toUpperCase(), Font.semiboldSystemFont(9), style.accent);
+  nameRow.addSpacer();
+  addText(nameRow, formatTokens(profile.total_tokens), Font.boldSystemFont(24), style.accent);
+  content.addSpacer();
+  addAgentPanel(content, profile, parseJSON(agentsBody), style, ${largeBarTrackWidthPoints});
+  content.addSpacer(6);
+  const labelRow = content.addStack();
+  labelRow.addSpacer();
+  addText(labelRow, "GITTOKEN", Font.semiboldSystemFont(8), themed((theme) => theme.ink, 0.4));
+  labelRow.addSpacer();
+}`,
+    ),
+};
+
+/** Styled like wide_profile.svg.jinja: the photo beside tokens, rarity and top agents. */
+export const wideProfileWidget: Widget = {
+  family: "medium",
+  script: (origin, login) =>
+    widgetScript(
+      "Wide profile",
+      wideProfileWidget.family,
+      origin,
+      login,
+      [
+        `${origin}${userPath(login)}`,
+        `${origin}${agentsPath}`,
         avatarUrl(login, avatarSizePixels),
       ],
-      [agentPanelSource],
-      `/* Iridescent rims are the ring of profile.svg.jinja, without its spin. */
-function drawProfileRim(rarity, style) {
-  if (palette.iridescent_rarities.includes(rarity)) {
-    const stops = palette.iridescent_rim_stops;
-    widget.backgroundColor = new Color(stops[0][1]);
-    rim.backgroundGradient = gradient(stops.map(([, hex]) => new Color(hex)), stops.map(([offset]) => offset), new Point(1, 1));
-  } else {
-    drawRim(style.rimStartHex, style.tintHex, 0.4, style.rimEndHex);
-  }
-}
-
-function draw(userBody, agentsBody, avatarBody) {
+      [agentPanelSource, profileRimSource],
+      `function draw(userBody, agentsBody, avatarBody) {
   const profile = parseJSON(userBody);
   const style = rarityStyle(profile.rarity);
   drawProfileRim(profile.rarity, style);
@@ -349,7 +410,7 @@ function draw(userBody, agentsBody, avatarBody) {
   addLine(details, profile.rarity.toUpperCase(), Font.semiboldSystemFont(9), style.accent);
   addLine(details, formatTokens(profile.total_tokens), Font.boldSystemFont(20), style.accent);
   details.addSpacer();
-  addAgentPanel(details, profile, parseJSON(agentsBody), style);
+  addAgentPanel(details, profile, parseJSON(agentsBody), style, ${barTrackWidthPoints});
 }`,
     ),
 };
