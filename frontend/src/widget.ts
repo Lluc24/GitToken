@@ -24,27 +24,88 @@ const contentPaddingPoints = 12;
 const panelPaddingPoints = 8;
 // Room for "100%" in 9pt monospaced digits beside a bar.
 const percentWidthPoints = 44;
-// iPhones 320pt wide give the narrowest widgets Scriptable runs in: medium 292 by 141pt, large 292 by 311pt.
+const contentInsetPoints = 2 * (rimWidthPoints + contentPaddingPoints);
+// iPhones 320pt wide give the narrowest medium widget Scriptable runs in, 292 by 141pt.
 const narrowestWidgetWidthPoints = 292;
 const narrowestMediumHeightPoints = 141;
-// Keeps fractional heatmap cells and the large photo clear of the padding at the narrowest width.
-const narrowestWidthSlackPoints = 4;
+// Keeps fixed-width content 2pt clear of each side, so fractional sizes never meet the padding.
+const sideSlackPoints = 4;
 const narrowestContentWidthPoints =
-  narrowestWidgetWidthPoints - 2 * (rimWidthPoints + contentPaddingPoints);
+  narrowestWidgetWidthPoints - contentInsetPoints;
 // A little under the narrowest medium widget's content height, so the photo never touches its padding.
-const photoSizePoints =
-  narrowestMediumHeightPoints - 2 * (rimWidthPoints + contentPaddingPoints) - 5;
+const photoSizePoints = narrowestMediumHeightPoints - contentInsetPoints - 5;
 const avatarSizePixels = 324;
-const largePhotoWidthPoints =
-  narrowestContentWidthPoints - narrowestWidthSlackPoints;
-// Leaves the large widget's 283pt of content height room for the name, the agent panel and the label.
-const largePhotoHeightPoints = 140;
-const largeBarTrackWidthPoints =
-  largePhotoWidthPoints - 2 * panelPaddingPoints - percentWidthPoints;
-// The largest avatar GitHub serves: about 1.8x across the large photo, so it is the limit rather than a choice.
+// Apple's Human Interface Guidelines (Widgets, Specifications): the large widget's size on each iPhone screen in
+// portrait, narrowest first.
+const largeWidgetSizeByScreenPoints = [
+  {
+    screenWidthPoints: 320,
+    screenHeightPoints: 568,
+    widgetWidthPoints: 292,
+    widgetHeightPoints: 311,
+  },
+  {
+    screenWidthPoints: 360,
+    screenHeightPoints: 780,
+    widgetWidthPoints: 329,
+    widgetHeightPoints: 345,
+  },
+  {
+    screenWidthPoints: 375,
+    screenHeightPoints: 667,
+    widgetWidthPoints: 321,
+    widgetHeightPoints: 324,
+  },
+  {
+    screenWidthPoints: 375,
+    screenHeightPoints: 812,
+    widgetWidthPoints: 329,
+    widgetHeightPoints: 345,
+  },
+  {
+    screenWidthPoints: 390,
+    screenHeightPoints: 844,
+    widgetWidthPoints: 338,
+    widgetHeightPoints: 354,
+  },
+  {
+    screenWidthPoints: 393,
+    screenHeightPoints: 852,
+    widgetWidthPoints: 338,
+    widgetHeightPoints: 354,
+  },
+  {
+    screenWidthPoints: 414,
+    screenHeightPoints: 736,
+    widgetWidthPoints: 348,
+    widgetHeightPoints: 357,
+  },
+  {
+    screenWidthPoints: 414,
+    screenHeightPoints: 896,
+    widgetWidthPoints: 360,
+    widgetHeightPoints: 379,
+  },
+  {
+    screenWidthPoints: 428,
+    screenHeightPoints: 926,
+    widgetWidthPoints: 364,
+    widgetHeightPoints: 382,
+  },
+  {
+    screenWidthPoints: 430,
+    screenHeightPoints: 932,
+    widgetWidthPoints: 364,
+    widgetHeightPoints: 382,
+  },
+] as const;
+// SwiftUI keeps a flexible spacer at least the standard 8pt spacing tall.
+const flexibleSpacerMinimumPoints = 8;
+// Covers rounding in the text height estimate, which already rounds each line up.
+const largeLayoutSlackPoints = 4;
+// The largest avatar GitHub serves: 1.4x to 1.8x across the large photo, so it is the limit rather than a choice.
 const largeAvatarSizePixels = 460;
-const heatmapWidthPoints =
-  narrowestContentWidthPoints - narrowestWidthSlackPoints;
+const heatmapWidthPoints = narrowestContentWidthPoints - sideSlackPoints;
 const heatmapGapPoints = 1;
 // A month name at 8pt is about 15pt wide: three week columns at the grid's step of about 4.9pt.
 const monthLabelMinWeeks = 3;
@@ -94,7 +155,8 @@ function addBar(stack, trackWidthPoints, fillWidthPoints, startHex, endColor) {
 }
 
 /* Matches _rows and _MAX_ROWS in backend/src/gittoken/badge.py: tokens_by_agent comes largest first. */
-function agentRows(profile, nameByAgent) {
+function agentRows(profile, agents) {
+  const nameByAgent = Object.fromEntries(agents.map(({ agent, name }) => [agent, name]));
   const row = (name, tokens) => ({
     name,
     tokens,
@@ -107,24 +169,27 @@ function agentRows(profile, nameByAgent) {
   return rows;
 }
 
-function addAgentPanel(stack, profile, agents, style, trackWidthPoints) {
-  const nameByAgent = Object.fromEntries(agents.map(({ agent, name }) => [agent, name]));
-  const rows = agentRows(profile, nameByAgent);
+const panelNameFontPoints = 10;
+const panelValueFontPoints = 9;
+const panelSpacingPoints = 2;
+const panelVerticalPaddingPoints = 4;
+
+function addAgentPanel(stack, rows, totalTokens, style, trackWidthPoints) {
   if (rows.length > 0) {
     const panel = stack.addStack();
     panel.layoutVertically();
-    panel.spacing = 2;
+    panel.spacing = panelSpacingPoints;
     panel.cornerRadius = 10;
-    panel.setPadding(4, ${panelPaddingPoints}, 4, ${panelPaddingPoints});
+    panel.setPadding(panelVerticalPaddingPoints, ${panelPaddingPoints}, panelVerticalPaddingPoints, ${panelPaddingPoints});
     panel.backgroundColor = themed((theme) => theme.ink, 0.06);
     const valueColor = themed((theme) => theme.ink, 0.85);
-    const valueFont = Font.regularMonospacedSystemFont(9);
+    const valueFont = Font.regularMonospacedSystemFont(panelValueFontPoints);
     for (const row of rows) {
-      const nameLine = addLine(panel, row.name, Font.mediumSystemFont(10), themed((theme) => theme.ink));
+      const nameLine = addLine(panel, row.name, Font.mediumSystemFont(panelNameFontPoints), themed((theme) => theme.ink));
       addText(nameLine, formatTokens(row.tokens), valueFont, valueColor);
       const barLine = panel.addStack();
       barLine.centerAlignContent();
-      const fillWidthPoints = profile.total_tokens ? Math.max(4, Math.round((trackWidthPoints * row.tokens) / profile.total_tokens)) : 0;
+      const fillWidthPoints = totalTokens ? Math.max(4, Math.round((trackWidthPoints * row.tokens) / totalTokens)) : 0;
       addBar(barLine, trackWidthPoints, fillWidthPoints, style.tintHex, style.barEndColor);
       barLine.addSpacer();
       addText(barLine, row.percent + "%", valueFont, valueColor);
@@ -321,7 +386,7 @@ export const cardWidget: Widget = {
   addLine(content, profile.rarity.toUpperCase(), Font.semiboldSystemFont(9), style.accent);
   addLine(content, formatTokens(profile.total_tokens), Font.boldSystemFont(22), style.accent);
   content.addSpacer();
-  addAgentPanel(content, profile, parseJSON(agentsBody), style, ${barTrackWidthPoints});
+  addAgentPanel(content, agentRows(profile, parseJSON(agentsBody)), profile.total_tokens, style, ${barTrackWidthPoints});
 }`,
     ),
 };
@@ -341,35 +406,71 @@ export const profileWidget: Widget = {
         avatarUrl(login, largeAvatarSizePixels),
       ],
       [agentPanelSource, profileRimSource],
-      `function draw(userBody, agentsBody, avatarBody) {
+      `const largeWidgetSizeByScreen = ${JSON.stringify(largeWidgetSizeByScreenPoints)};
+const nameFontPoints = 18;
+const rarityFontPoints = 9;
+const totalFontPoints = 24;
+const labelFontPoints = 8;
+const photoGapPoints = 8;
+const panelGapPoints = 6;
+const labelGapPoints = 6;
+
+/* Post: the large widget's size on this iPhone, or on the nearest smaller listed one, so the layout never outgrows
+   the widget; an iPad, or a screen smaller than any listed, gets the narrowest. */
+function largeWidgetSize() {
+  const screen = Device.screenSize();
+  const portraitWidthPoints = Math.min(screen.width, screen.height);
+  const portraitHeightPoints = Math.max(screen.width, screen.height);
+  const fittingSizes = Device.isPad() ? [] : largeWidgetSizeByScreen.filter((size) => size.screenWidthPoints <= portraitWidthPoints && size.screenHeightPoints <= portraitHeightPoints);
+  const largest = fittingSizes.reduce((tallest, size) => (size.widgetHeightPoints > tallest.widgetHeightPoints ? size : tallest), largeWidgetSizeByScreen[0]);
+  return new Size(largest.widgetWidthPoints, largest.widgetHeightPoints);
+}
+
+/* SF Pro's line height is about 1.2 times its point size. */
+function textHeightPoints(fontPoints) {
+  return Math.ceil(fontPoints * 1.2);
+}
+
+function agentPanelHeightPoints(rowCount) {
+  return rowCount > 0 ? 2 * panelVerticalPaddingPoints + rowCount * (textHeightPoints(panelNameFontPoints) + textHeightPoints(panelValueFontPoints)) + (2 * rowCount - 1) * panelSpacingPoints : 0;
+}
+
+/* The photo takes every point the name, the agent panel and the label leave, as the tall badge's photo does. */
+function draw(userBody, agentsBody, avatarBody) {
   const profile = parseJSON(userBody);
+  const rows = agentRows(profile, parseJSON(agentsBody));
   const style = rarityStyle(profile.rarity);
   drawProfileRim(profile.rarity, style);
   drawTint(style.tintHex, 0.2, 0.6);
+  const widgetSize = largeWidgetSize();
+  const photoWidthPoints = widgetSize.width - ${contentInsetPoints} - ${sideSlackPoints};
+  const nameRowHeightPoints = Math.max(textHeightPoints(nameFontPoints) + textHeightPoints(rarityFontPoints), textHeightPoints(totalFontPoints));
+  const reservedHeightPoints = photoGapPoints + nameRowHeightPoints + panelGapPoints + agentPanelHeightPoints(rows.length) + ${flexibleSpacerMinimumPoints} + labelGapPoints + textHeightPoints(labelFontPoints) + ${largeLayoutSlackPoints};
   const photoRow = content.addStack();
   photoRow.addSpacer();
   const photo = photoRow.addImage(Image.fromData(avatarBody));
-  photo.imageSize = new Size(${largePhotoWidthPoints}, ${largePhotoHeightPoints});
+  photo.imageSize = new Size(photoWidthPoints, widgetSize.height - ${contentInsetPoints} - reservedHeightPoints);
   photo.applyFillingContentMode();
   photo.cornerRadius = 16;
   photo.borderWidth = 1;
   photo.borderColor = themed((theme) => theme.ink, 0.15);
   photoRow.addSpacer();
-  content.addSpacer(8);
+  content.addSpacer(photoGapPoints);
   const nameRow = content.addStack();
   nameRow.centerAlignContent();
   const nameColumn = nameRow.addStack();
   nameColumn.layoutVertically();
-  addText(nameColumn, profile.login, Font.boldSystemFont(18), themed((theme) => theme.ink));
-  addText(nameColumn, profile.rarity.toUpperCase(), Font.semiboldSystemFont(9), style.accent);
+  addText(nameColumn, profile.login, Font.boldSystemFont(nameFontPoints), themed((theme) => theme.ink));
+  addText(nameColumn, profile.rarity.toUpperCase(), Font.semiboldSystemFont(rarityFontPoints), style.accent);
   nameRow.addSpacer();
-  addText(nameRow, formatTokens(profile.total_tokens), Font.boldSystemFont(24), style.accent);
+  addText(nameRow, formatTokens(profile.total_tokens), Font.boldSystemFont(totalFontPoints), style.accent);
+  content.addSpacer(panelGapPoints);
   content.addSpacer();
-  addAgentPanel(content, profile, parseJSON(agentsBody), style, ${largeBarTrackWidthPoints});
-  content.addSpacer(6);
+  addAgentPanel(content, rows, profile.total_tokens, style, photoWidthPoints - 2 * ${panelPaddingPoints} - ${percentWidthPoints});
+  content.addSpacer(labelGapPoints);
   const labelRow = content.addStack();
   labelRow.addSpacer();
-  addText(labelRow, "GITTOKEN", Font.semiboldSystemFont(8), themed((theme) => theme.ink, 0.4));
+  addText(labelRow, "GITTOKEN", Font.semiboldSystemFont(labelFontPoints), themed((theme) => theme.ink, 0.4));
   labelRow.addSpacer();
 }`,
     ),
@@ -410,7 +511,7 @@ export const wideProfileWidget: Widget = {
   addLine(details, profile.rarity.toUpperCase(), Font.semiboldSystemFont(9), style.accent);
   addLine(details, formatTokens(profile.total_tokens), Font.boldSystemFont(20), style.accent);
   details.addSpacer();
-  addAgentPanel(details, profile, parseJSON(agentsBody), style, ${barTrackWidthPoints});
+  addAgentPanel(details, agentRows(profile, parseJSON(agentsBody)), profile.total_tokens, style, ${barTrackWidthPoints});
 }`,
     ),
 };
