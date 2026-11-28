@@ -381,17 +381,13 @@ async def _scan_repositories(
         for index, repository_node_id in pending_repositories:
             scans[index] = await _scan_repository(github_client, repository_node_id, headers)
 
-    workers = [
-        asyncio.create_task(scan_next_repositories())
-        for _ in range(min(_MAXIMUM_CONCURRENT_REPOSITORIES, len(repository_node_ids)))
-    ]
     try:
-        await asyncio.gather(*workers)
-        return tuple(commit for scan in scans for commit in scan)
-    finally:
-        for worker in workers:
-            worker.cancel()
-        await asyncio.gather(*workers, return_exceptions=True)
+        async with asyncio.TaskGroup() as workers:
+            for _ in range(min(_MAXIMUM_CONCURRENT_REPOSITORIES, len(repository_node_ids))):
+                workers.create_task(scan_next_repositories())
+    except* GithubRequestError as scan_errors:
+        raise GithubRequestError("GitHub could not complete the repository scan") from scan_errors
+    return tuple(commit for scan in scans for commit in scan)
 
 
 class _Account(BaseModel):
@@ -671,16 +667,27 @@ async def fetch_github_profile(
     the private ones it granted to the app, under its login in GitHub's casing, or
     ProfileNotFoundError. Failed or incomplete GitHub responses raise GithubRequestError."""
     public_repositories = await _fetch_public_repositories(github_client, login)
-    public_commits = await _scan_repositories(
-        github_client, public_repositories.repository_node_ids, {}
-    )
-    private_commits = await _fetch_private_commits(
-        github_client, github_app, public_repositories.github_id, public_repositories.login, now
-    )
+    try:
+        async with asyncio.TaskGroup() as scans:
+            public_scan = scans.create_task(
+                _scan_repositories(github_client, public_repositories.repository_node_ids, {})
+            )
+            private_scan = scans.create_task(
+                _fetch_private_commits(
+                    github_client,
+                    github_app,
+                    public_repositories.github_id,
+                    public_repositories.login,
+                    now,
+                )
+            )
+    except* GithubRequestError as scan_errors:
+        raise GithubRequestError("GitHub could not complete the profile scan") from scan_errors
+    private_commits = private_scan.result()
     return profile_from_commits(
         public_repositories.github_id,
         public_repositories.login,
-        (*public_commits, *private_commits.commits),
+        (*public_scan.result(), *private_commits.commits),
         private_commits.repository_ids,
     )
 
