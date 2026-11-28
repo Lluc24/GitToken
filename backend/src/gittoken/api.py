@@ -85,7 +85,6 @@ from gittoken.github import (
     parse_webhook,
 )
 from gittoken.slack import SlackActivityClient, create_slack_activity_client
-from gittoken.telemetry import configure_tracing
 
 # Profiles are rescanned at most daily, so the CDN may keep these responses for a day.
 _DAILY_CACHE_CONTROL = "public, max-age=0, s-maxage=86400, stale-while-revalidate=3600"
@@ -104,7 +103,6 @@ class ApiSettings(BaseSettings):
     github_token: SecretStr
     supabase_url: HttpUrl
     supabase_secret_key: SecretStr
-    otel_exporter_otlp_endpoint: HttpUrl | None = None
     sentry_dsn: SecretStr = SecretStr("")
     github_app_id: PositiveInt
     github_app_private_key: SecretStr
@@ -350,7 +348,8 @@ def _add_profile_search_route(app: FastAPI, slack_client: SlackActivityClient) -
         await report_profile_search(slack_client, event.login)
 
 
-def _configure_observability(settings: ApiSettings) -> None:
+def create_app() -> FastAPI:
+    settings = ApiSettings()
     logger.remove()
     logger.add(sys.stderr, serialize=True, diagnose=False, backtrace=False)
     if settings.sentry_dsn.get_secret_value():
@@ -367,15 +366,8 @@ def _configure_observability(settings: ApiSettings) -> None:
             ],
             send_default_pii=False,
             include_local_variables=False,
-            traces_sample_rate=0,
+            traces_sample_rate=1.0,
         )
-    if settings.otel_exporter_otlp_endpoint is not None:
-        configure_tracing(settings.otel_exporter_otlp_endpoint)
-
-
-def create_app() -> FastAPI:
-    settings = ApiSettings()
-    _configure_observability(settings)
     github_app = settings.github_app
     github_client = create_github_api_client(settings.github_token)
     avatar_client = create_github_avatar_client()

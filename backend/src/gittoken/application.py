@@ -3,6 +3,7 @@ from contextlib import contextmanager, suppress
 from datetime import UTC, date, datetime, timedelta
 from time import perf_counter
 
+import sentry_sdk
 from loguru import logger
 
 from gittoken.db import (
@@ -41,7 +42,6 @@ from gittoken.github import (
     fetch_personal_installation,
 )
 from gittoken.slack import SlackActivityClient, notify_profile_search
-from gittoken.telemetry import tracer
 
 # A verified owner can authorize again at will, so a profile scanned this recently is kept to
 # spare the shared GitHub rate limit.
@@ -50,12 +50,6 @@ _MINIMUM_RESCAN_INTERVAL = timedelta(minutes=1)
 
 def today_utc() -> date:
     return datetime.now(UTC).date()
-
-
-@contextmanager
-def _span(name: str) -> Iterator[None]:
-    with tracer.start_as_current_span(name, record_exception=False, set_status_on_exception=False):
-        yield
 
 
 @contextmanager
@@ -90,17 +84,23 @@ async def lookup_profile(
     """Post: the cached profile, or a fresh scan that also covers the private repositories the
     account granted."""
     now = datetime.now(UTC)
-    with _logged_failure(
-        "profile_upstream_error", "Profile lookup failed", (GithubRequestError, ProfileStoreError)
-    ) as elapsed_seconds:
+    with (
+        sentry_sdk.new_scope(),
+        sentry_sdk.start_transaction(op="profile.lookup", name="lookup_profile"),
+        _logged_failure(
+            "profile_upstream_error",
+            "Profile lookup failed",
+            (GithubRequestError, ProfileStoreError),
+        ) as elapsed_seconds,
+    ):
         try:
-            with _span("cache.supabase.read"):
+            with sentry_sdk.start_span(name="cache.supabase.read"):
                 profile = await fetch_cached_profile(supabase_client, login, now)
             cache_hit = profile is not None
             if profile is None:
-                with _span("github.scan"):
+                with sentry_sdk.start_span(name="github.scan"):
                     profile = await fetch_github_profile(github_client, github_app, login, now)
-                with _span("profile.persist"):
+                with sentry_sdk.start_span(name="profile.persist"):
                     await delete_renamed_user(supabase_client, profile)
                     await save_profile(supabase_client, profile, now)
         except ProfileNotFoundError:
