@@ -1,19 +1,20 @@
-name: review
+name: Review
+
 on:
   pull_request:
     types: [opened, ready_for_review, synchronize]
-
-concurrency:
-  group: review-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
 
 permissions:
   contents: read
   pull-requests: write
 
+concurrency:
+  group: review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
   review:
-    if: ${{ !github.event.pull_request.draft }}
+    if: '!github.event.pull_request.draft'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
