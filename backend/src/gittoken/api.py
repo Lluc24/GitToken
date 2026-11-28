@@ -104,7 +104,7 @@ class ApiSettings(BaseSettings):
     github_token: SecretStr
     supabase_url: HttpUrl
     supabase_secret_key: SecretStr
-    otel_exporter_otlp_endpoint: str = ""
+    otel_exporter_otlp_endpoint: HttpUrl | None = None
     sentry_dsn: SecretStr = SecretStr("")
     github_app_id: PositiveInt
     github_app_private_key: SecretStr
@@ -350,8 +350,7 @@ def _add_profile_search_route(app: FastAPI, slack_client: SlackActivityClient) -
         await report_profile_search(slack_client, event.login)
 
 
-def create_app() -> FastAPI:
-    settings = ApiSettings()
+def _configure_observability(settings: ApiSettings) -> None:
     logger.remove()
     logger.add(sys.stderr, serialize=True, diagnose=False, backtrace=False)
     if settings.sentry_dsn.get_secret_value():
@@ -370,7 +369,13 @@ def create_app() -> FastAPI:
             include_local_variables=False,
             traces_sample_rate=0,
         )
-    configure_tracing(settings.otel_exporter_otlp_endpoint)
+    if settings.otel_exporter_otlp_endpoint is not None:
+        configure_tracing(settings.otel_exporter_otlp_endpoint)
+
+
+def create_app() -> FastAPI:
+    settings = ApiSettings()
+    _configure_observability(settings)
     github_app = settings.github_app
     github_client = create_github_api_client(settings.github_token)
     avatar_client = create_github_avatar_client()
