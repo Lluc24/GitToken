@@ -70,6 +70,8 @@ GithubOauthClient = NewType("GithubOauthClient", httpx.AsyncClient)
 # A client for GitHub's avatar host; a separate client so the API token never reaches it.
 GithubAvatarClient = NewType("GithubAvatarClient", httpx.AsyncClient)
 
+_RepositoryNodeId = NewType("_RepositoryNodeId", str)
+
 
 @dataclass(frozen=True)
 class GithubApp:
@@ -154,7 +156,7 @@ query($repositoryId: ID!, $since: GitTimestamp!, $cursor: String) {
 
 
 class _Repository(BaseModel):
-    node_id: str = Field(alias="id")
+    node_id: _RepositoryNodeId = Field(alias="id")
     pushed_at: AwareDatetime | None = Field(alias="pushedAt")
 
 
@@ -277,7 +279,9 @@ async def _query(
 
 
 async def _scan_repository(
-    github_client: GithubApiClient, repository_node_id: str, headers: Mapping[str, str]
+    github_client: GithubApiClient,
+    repository_node_id: _RepositoryNodeId,
+    headers: Mapping[str, str],
 ) -> tuple[AgentCommit, ...]:
     """Post: the agent commits on the default branch since 2025, each on its UTC authored day."""
     agent_commits: list[AgentCommit] = []
@@ -320,7 +324,7 @@ async def _scan_repository(
 class _PublicRepositories:
     github_id: GithubUserId
     login: VerifiedGithubUsername
-    repository_node_ids: tuple[str, ...]
+    repository_node_ids: tuple[_RepositoryNodeId, ...]
 
 
 async def _fetch_public_repositories(
@@ -328,7 +332,7 @@ async def _fetch_public_repositories(
 ) -> _PublicRepositories:
     """Post: the account, with its login in GitHub's casing, and its public non-fork repositories
     pushed since 2025."""
-    repository_node_ids: list[str] = []
+    repository_node_ids: list[_RepositoryNodeId] = []
     cursor: str | None = None
     seen_cursors: set[str] = set()
     while True:
@@ -365,7 +369,9 @@ async def _fetch_public_repositories(
 
 
 async def _scan_repositories(
-    github_client: GithubApiClient, repository_node_ids: tuple[str, ...], headers: Mapping[str, str]
+    github_client: GithubApiClient,
+    repository_node_ids: tuple[_RepositoryNodeId, ...],
+    headers: Mapping[str, str],
 ) -> tuple[AgentCommit, ...]:
     """Post: the agent commits of every repository in repository_node_ids."""
     pending_repositories = iter(enumerate(repository_node_ids))
@@ -410,7 +416,7 @@ class _Owner(BaseModel):
 
 class _InstallationRepository(BaseModel):
     id: int = Field(gt=0)
-    node_id: str
+    node_id: _RepositoryNodeId
     private: bool
     fork: bool
     pushed_at: AwareDatetime | None
