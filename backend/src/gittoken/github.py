@@ -372,17 +372,13 @@ async def _scan_repositories(
         for index, repository_node_id in pending_repositories:
             scans[index] = await _scan_repository(github_client, repository_node_id, headers)
 
-    workers = [
-        asyncio.create_task(scan_next_repositories())
-        for _ in range(min(_MAXIMUM_CONCURRENT_REPOSITORIES, len(repository_node_ids)))
-    ]
     try:
-        await asyncio.gather(*workers)
-        return tuple(commit for scan in scans for commit in scan)
-    finally:
-        for worker in workers:
-            worker.cancel()
-        await asyncio.gather(*workers, return_exceptions=True)
+        async with asyncio.TaskGroup() as workers:
+            for _ in range(min(_MAXIMUM_CONCURRENT_REPOSITORIES, len(repository_node_ids))):
+                workers.create_task(scan_next_repositories())
+    except* GithubRequestError as scan_errors:
+        raise GithubRequestError("GitHub could not complete the repository scan") from scan_errors
+    return tuple(commit for scan in scans for commit in scan)
 
 
 class _Account(BaseModel):
@@ -595,13 +591,6 @@ async def _revoke_installation_token(
         raise GithubRequestError("GitHub could not revoke the installation token") from error
 
 
-def _installation_authorization(installation_token: _InstallationToken) -> dict[str, str]:
-    return {
-        **_REST_HEADERS,
-        "Authorization": f"Bearer {installation_token.token.get_secret_value()}",
-    }
-
-
 @dataclass(frozen=True)
 class _PrivateCommits:
     repository_ids: tuple[RepositoryId, ...]
@@ -630,14 +619,12 @@ async def _fetch_private_commits(
             f"/app/installations/{installation.id}/access_tokens",
             headers=_app_authorization(github_app, now),
         )
-        # Shielded so a scan cancelled mid-request still revokes the issued token.
-        token_creation = asyncio.create_task(
-            _request_rest(github_client, token_request, _INSTALLATION_TOKEN)
-        )
+        installation_token = await _request_rest(github_client, token_request, _INSTALLATION_TOKEN)
+        installation_authorization = {
+            **_REST_HEADERS,
+            "Authorization": f"Bearer {installation_token.token.get_secret_value()}",
+        }
         try:
-            installation_authorization = _installation_authorization(
-                await asyncio.shield(token_creation)
-            )
             repositories = [
                 repository
                 for repository in await _fetch_installation_repositories(
@@ -657,9 +644,7 @@ async def _fetch_private_commits(
                 ),
             )
         finally:
-            await _revoke_installation_token(
-                github_client, _installation_authorization(await token_creation)
-            )
+            await _revoke_installation_token(github_client, installation_authorization)
     return private_commits
 
 
